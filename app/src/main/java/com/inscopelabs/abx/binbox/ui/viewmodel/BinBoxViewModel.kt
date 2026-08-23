@@ -8,19 +8,50 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
+import com.inscopelabs.abx.binbox.core.result.AppResult
 import com.inscopelabs.abx.binbox.data.database.AppDatabase
 import com.inscopelabs.abx.binbox.data.entity.HistoryEntity
 import com.inscopelabs.abx.binbox.data.entity.HostEntity
 import com.inscopelabs.abx.binbox.data.entity.KeyEntity
 import com.inscopelabs.abx.binbox.data.entity.SnippetEntity
-import com.inscopelabs.abx.binbox.data.repository.BinBoxRepository
-import com.inscopelabs.abx.binbox.terminal.engine.*
-import com.inscopelabs.abx.binbox.terminal.model.*
+import com.inscopelabs.abx.binbox.data.mapper.toDomain
+import com.inscopelabs.abx.binbox.data.mapper.toEntity
+import com.inscopelabs.abx.binbox.data.repository.HistoryRepositoryImpl
+import com.inscopelabs.abx.binbox.data.repository.HostRepositoryImpl
+import com.inscopelabs.abx.binbox.data.repository.KeyRepositoryImpl
+import com.inscopelabs.abx.binbox.data.repository.SessionRepositoryImpl
+import com.inscopelabs.abx.binbox.data.repository.SnippetRepositoryImpl
+import com.inscopelabs.abx.binbox.domain.model.CommandHistory
+import com.inscopelabs.abx.binbox.domain.model.ConnectionProfile
+import com.inscopelabs.abx.binbox.domain.model.ProtocolType
+import com.inscopelabs.abx.binbox.domain.model.Snippet
+import com.inscopelabs.abx.binbox.domain.model.SshKey
+import com.inscopelabs.abx.binbox.domain.usecase.HistoryUseCases
+import com.inscopelabs.abx.binbox.domain.usecase.HostUseCases
+import com.inscopelabs.abx.binbox.domain.usecase.KeyUseCases
+import com.inscopelabs.abx.binbox.domain.usecase.ManageSessionUseCase
+import com.inscopelabs.abx.binbox.domain.usecase.SnippetUseCases
+import com.inscopelabs.abx.binbox.terminal.engine.ShellSession
+import com.inscopelabs.abx.binbox.terminal.engine.TerminalKey
+import com.inscopelabs.abx.binbox.terminal.engine.TerminalSessionFactory
+import com.inscopelabs.abx.binbox.terminal.engine.TerminalSessionManager
+import com.inscopelabs.abx.binbox.terminal.model.CursorStyle
+import com.inscopelabs.abx.binbox.terminal.model.SessionState
+import com.inscopelabs.abx.binbox.terminal.model.TerminalThemePreset
+import com.inscopelabs.abx.binbox.terminal.model.TerminalThemes
 import com.inscopelabs.abx.binbox.ui.i18n.AppLanguage
 import com.inscopelabs.abx.binbox.ui.i18n.AppStrings
 import com.inscopelabs.abx.binbox.ui.i18n.Translations
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 enum class AppTab(val label: String) {
@@ -41,104 +72,188 @@ data class ServerTelemetry(
     val timestamp: Long = System.currentTimeMillis()
 )
 
-class BinBoxViewModel(application: Application) : AndroidViewModel(application) {
+class BinBoxViewModel(
+    application: Application,
+    val hostUseCases: HostUseCases,
+    val keyUseCases: KeyUseCases,
+    val snippetUseCases: SnippetUseCases,
+    val historyUseCases: HistoryUseCases,
+    val manageSessionUseCase: ManageSessionUseCase,
+    val sessionManager: TerminalSessionManager
+) : AndroidViewModel(application) {
 
-    private val repository: BinBoxRepository
+    // Secondary Constructor for Standard Compose ViewModel instantiation
+    constructor(application: Application) : this(
+        application = application,
+        graph = createDependencyGraph(application)
+    )
 
-    init {
-        val db = AppDatabase.getInstance(application)
-        repository = BinBoxRepository(db)
+    private constructor(
+        application: Application,
+        graph: DependencyGraph
+    ) : this(
+        application = application,
+        hostUseCases = graph.hostUseCases,
+        keyUseCases = graph.keyUseCases,
+        snippetUseCases = graph.snippetUseCases,
+        historyUseCases = graph.historyUseCases,
+        manageSessionUseCase = graph.manageSessionUseCase,
+        sessionManager = graph.sessionManager
+    )
+
+    companion object {
+        private fun createDependencyGraph(application: Application): DependencyGraph {
+            val db = AppDatabase.getInstance(application)
+            val hostRepo = HostRepositoryImpl(db.hostDao())
+            val keyRepo = KeyRepositoryImpl(db.keyDao())
+            val snippetRepo = SnippetRepositoryImpl(db.snippetDao())
+            val historyRepo = HistoryRepositoryImpl(db.historyDao())
+            val sessionRepo = SessionRepositoryImpl()
+
+            val hostUseCases = HostUseCases.create(hostRepo)
+            val keyUseCases = KeyUseCases.create(keyRepo)
+            val snippetUseCases = SnippetUseCases.create(snippetRepo, historyRepo)
+            val historyUseCases = HistoryUseCases.create(historyRepo)
+            val manageSessionUseCase = ManageSessionUseCase(sessionRepo)
+
+            val sessionFactory = TerminalSessionFactory(keyRepository = keyRepo)
+            val sessionManager = TerminalSessionManager(
+                sessionFactory = sessionFactory,
+                sessionRepository = sessionRepo
+            )
+
+            return DependencyGraph(
+                hostUseCases = hostUseCases,
+                keyUseCases = keyUseCases,
+                snippetUseCases = snippetUseCases,
+                historyUseCases = historyUseCases,
+                manageSessionUseCase = manageSessionUseCase,
+                sessionManager = sessionManager
+            )
+        }
     }
 
-    // Database Flows
-    val hosts: StateFlow<List<HostEntity>> = repository.allHosts
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private data class DependencyGraph(
+        val hostUseCases: HostUseCases,
+        val keyUseCases: KeyUseCases,
+        val snippetUseCases: SnippetUseCases,
+        val historyUseCases: HistoryUseCases,
+        val manageSessionUseCase: ManageSessionUseCase,
+        val sessionManager: TerminalSessionManager
+    )
 
-    val keys: StateFlow<List<KeyEntity>> = repository.allKeys
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // ----------------------------------------------------
+    // Reactive Domain & Entity Data Streams
+    // ----------------------------------------------------
+    val domainHosts: StateFlow<List<ConnectionProfile>> = hostUseCases.getHosts()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val snippets: StateFlow<List<SnippetEntity>> = repository.allSnippets
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val hosts: StateFlow<List<HostEntity>> = domainHosts
+        .map { list -> list.map { it.toEntity() } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val history: StateFlow<List<HistoryEntity>> = repository.recentHistory
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val domainKeys: StateFlow<List<SshKey>> = keyUseCases.getKeys()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    val keys: StateFlow<List<KeyEntity>> = domainKeys
+        .map { list -> list.map { it.toEntity() } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val domainSnippets: StateFlow<List<Snippet>> = snippetUseCases.getSnippets()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val snippets: StateFlow<List<SnippetEntity>> = domainSnippets
+        .map { list -> list.map { it.toEntity() } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val domainHistory: StateFlow<List<CommandHistory>> = historyUseCases.getHistory()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val history: StateFlow<List<HistoryEntity>> = domainHistory
+        .map { list -> list.map { it.toEntity() } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // ----------------------------------------------------
     // UI Navigation State
+    // ----------------------------------------------------
     private val _currentAppTab = MutableStateFlow(AppTab.TERMINAL)
-    val currentAppTab = _currentAppTab.asStateFlow()
+    val currentAppTab: StateFlow<AppTab> = _currentAppTab.asStateFlow()
 
+    // ----------------------------------------------------
     // Terminal Appearance & Settings
+    // ----------------------------------------------------
     private val prefs = application.getSharedPreferences("binbox_prefs", Context.MODE_PRIVATE)
 
     private val _appLanguage = MutableStateFlow(
         AppLanguage.fromCode(prefs.getString("pref_language", AppLanguage.SYSTEM.code) ?: AppLanguage.SYSTEM.code)
     )
-    val appLanguage = _appLanguage.asStateFlow()
+    val appLanguage: StateFlow<AppLanguage> = _appLanguage.asStateFlow()
 
     val strings: StateFlow<AppStrings> = _appLanguage.map { lang ->
         Translations.getStringsFor(lang)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, Translations.getStringsFor(_appLanguage.value))
 
     private val _currentTheme = MutableStateFlow(TerminalThemes.MonokaiPro)
-    val currentTheme = _currentTheme.asStateFlow()
+    val currentTheme: StateFlow<TerminalThemePreset> = _currentTheme.asStateFlow()
 
     private val _fontSizeSp = MutableStateFlow(13)
-    val fontSizeSp = _fontSizeSp.asStateFlow()
+    val fontSizeSp: StateFlow<Int> = _fontSizeSp.asStateFlow()
 
     private val _cursorStyle = MutableStateFlow(CursorStyle.BLOCK)
-    val cursorStyle = _cursorStyle.asStateFlow()
+    val cursorStyle: StateFlow<CursorStyle> = _cursorStyle.asStateFlow()
 
     private val _hapticFeedbackEnabled = MutableStateFlow(true)
-    val hapticFeedbackEnabled = _hapticFeedbackEnabled.asStateFlow()
+    val hapticFeedbackEnabled: StateFlow<Boolean> = _hapticFeedbackEnabled.asStateFlow()
 
+    // ----------------------------------------------------
     // Active Sessions & Multi-Tabs
-    private val _sessions = MutableStateFlow<List<ShellSession>>(emptyList())
-    val sessions = _sessions.asStateFlow()
+    // ----------------------------------------------------
+    val sessions: StateFlow<List<ShellSession>> = sessionManager.sessions
+    val activeSessionIndex: StateFlow<Int> = sessionManager.activeSessionIndex
 
-    private val _activeSessionIndex = MutableStateFlow(0)
-    val activeSessionIndex = _activeSessionIndex.asStateFlow()
-
-    val activeSession: StateFlow<ShellSession?> = combine(_sessions, _activeSessionIndex) { list, idx ->
+    val activeSession: StateFlow<ShellSession?> = combine(sessions, activeSessionIndex) { list, idx ->
         if (list.isNotEmpty() && idx in list.indices) list[idx] else null
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     // Keypad Modifier States (Ctrl, Alt)
     private val _ctrlLatched = MutableStateFlow(false)
-    val ctrlLatched = _ctrlLatched.asStateFlow()
+    val ctrlLatched: StateFlow<Boolean> = _ctrlLatched.asStateFlow()
 
     private val _altLatched = MutableStateFlow(false)
-    val altLatched = _altLatched.asStateFlow()
+    val altLatched: StateFlow<Boolean> = _altLatched.asStateFlow()
 
     // Buffer Search
     private val _searchQuery = MutableStateFlow("")
-    val searchQuery = _searchQuery.asStateFlow()
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     private val _isSearching = MutableStateFlow(false)
-    val isSearching = _isSearching.asStateFlow()
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
     // Host Telemetry Dialog
     private val _telemetry = MutableStateFlow<ServerTelemetry?>(null)
-    val telemetry = _telemetry.asStateFlow()
+    val telemetry: StateFlow<ServerTelemetry?> = _telemetry.asStateFlow()
 
     // Snippet Parameter Runner Dialog
     private val _selectedSnippetForRun = MutableStateFlow<SnippetEntity?>(null)
-    val selectedSnippetForRun = _selectedSnippetForRun.asStateFlow()
+    val selectedSnippetForRun: StateFlow<SnippetEntity?> = _selectedSnippetForRun.asStateFlow()
 
     // Status Toast / Snackbar Message
     private val _snackbarMessage = MutableStateFlow<String?>(null)
-    val snackbarMessage = _snackbarMessage.asStateFlow()
+    val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
     init {
-        // Auto-launch demo session or local session on startup if none open
+        // Auto-launch demo session on initial launch if none open
         viewModelScope.launch {
-            // Small delay to let DB seed
             kotlinx.coroutines.delay(300)
-            if (_sessions.value.isEmpty()) {
+            if (sessions.value.isEmpty()) {
                 openDemoSession()
             }
         }
     }
 
+    // ----------------------------------------------------
+    // Navigation & Preferences Handlers
+    // ----------------------------------------------------
     fun setAppTab(tab: AppTab) {
         _currentAppTab.value = tab
     }
@@ -160,7 +275,7 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setTheme(theme: TerminalThemePreset) {
         _currentTheme.value = theme
-        _sessions.value.forEach { it.updateTheme(theme) }
+        sessionManager.updateTheme(theme)
     }
 
     fun setFontSize(sizeSp: Int) {
@@ -205,113 +320,56 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // ----------------------------------------------------
-    // Session Management
+    // Session Management Actions
     // ----------------------------------------------------
     fun selectSession(index: Int) {
-        if (index in _sessions.value.indices) {
-            _activeSessionIndex.value = index
-            _currentAppTab.value = AppTab.TERMINAL
-        }
+        sessionManager.selectSession(index)
+        _currentAppTab.value = AppTab.TERMINAL
     }
 
     fun closeSession(index: Int) {
-        val currentList = _sessions.value.toMutableList()
-        if (index in currentList.indices) {
-            val sessionToClose = currentList.removeAt(index)
-            sessionToClose.disconnect()
-            _sessions.value = currentList
-
-            if (currentList.isEmpty()) {
-                _activeSessionIndex.value = 0
-            } else if (_activeSessionIndex.value >= currentList.size) {
-                _activeSessionIndex.value = currentList.size - 1
-            }
-        }
+        sessionManager.closeSession(index)
     }
 
-    fun openDemoSession() {
-        val session = SandboxDemoShellSession(
-            title = "Cloud Demo (SSH)",
-            hostLabel = "vps-demo.binbox.io",
-            initialTheme = _currentTheme.value,
-            onBell = { onTerminalBell() }
+    fun openDemoSession(): kotlinx.coroutines.Job = viewModelScope.launch {
+        val demoProfile = ConnectionProfile(
+            label = "Cloud Demo (SSH)",
+            host = "vps-demo.binbox.io",
+            protocol = ProtocolType.DEMO_HOST,
+            themeId = _currentTheme.value.id
         )
-        addAndStartSession(session)
+        sessionManager.launchSession(demoProfile, theme = _currentTheme.value)
     }
 
-    fun openLocalSession() {
-        val session = LocalShellSession(
-            title = "Local Device",
-            hostLabel = "localhost",
-            initialTheme = _currentTheme.value,
-            onBell = { onTerminalBell() }
+    fun openLocalSession(): kotlinx.coroutines.Job = viewModelScope.launch {
+        val localProfile = ConnectionProfile(
+            label = "Local Device",
+            host = "localhost",
+            protocol = ProtocolType.LOCAL_SHELL,
+            themeId = _currentTheme.value.id
         )
-        addAndStartSession(session)
+        sessionManager.launchSession(localProfile, theme = _currentTheme.value)
     }
 
-    fun connectToHost(hostEntity: HostEntity) {
-        viewModelScope.launch {
-            var privateKeyContent: String? = null
-            if (hostEntity.authType == "PRIVATE_KEY" && hostEntity.keyId != null) {
-                val key = repository.allKeys.firstOrNull()?.find { it.id == hostEntity.keyId }
-                privateKeyContent = key?.privateKey
-            }
+    fun connectToHost(hostEntity: HostEntity): kotlinx.coroutines.Job = viewModelScope.launch {
+        val profile = hostEntity.toDomain()
+        val result = sessionManager.launchSession(profile, theme = _currentTheme.value)
 
-            val session: ShellSession = when (hostEntity.protocol) {
-                "LOCAL_SHELL" -> LocalShellSession(
-                    title = hostEntity.label,
-                    hostLabel = hostEntity.host,
-                    initialTheme = _currentTheme.value,
-                    onBell = { onTerminalBell() }
-                )
-                "DEMO_HOST" -> SandboxDemoShellSession(
-                    title = hostEntity.label,
-                    hostLabel = hostEntity.host,
-                    initialTheme = _currentTheme.value,
-                    onBell = { onTerminalBell() }
-                )
-                "TELNET" -> TelnetShellSession(
-                    title = hostEntity.label,
-                    hostLabel = hostEntity.host,
-                    host = hostEntity.host,
-                    port = if (hostEntity.port > 0) hostEntity.port else 23,
-                    initialTheme = _currentTheme.value,
-                    onBell = { onTerminalBell() }
-                )
-                else -> SshShellSession(
-                    title = hostEntity.label,
-                    hostLabel = "${hostEntity.username}@${hostEntity.host}",
-                    host = hostEntity.host,
-                    port = if (hostEntity.port > 0) hostEntity.port else 22,
-                    username = hostEntity.username,
-                    password = hostEntity.password,
-                    privateKey = privateKeyContent,
-                    privateKeyPassphrase = hostEntity.keyPassphrase,
-                    initialTheme = _currentTheme.value,
-                    onBell = { onTerminalBell() }
-                )
-            }
-
-            addAndStartSession(session)
+        if (result is AppResult.Success) {
+            val session = result.data
             _currentAppTab.value = AppTab.TERMINAL
 
-            // If host has startup command, send it after connection
-            if (!hostEntity.startupCommand.isNullOrBlank()) {
+            // If host has startup command, send it once connected
+            if (!profile.startupCommand.isNullOrBlank()) {
                 launch {
                     session.state.filter { it is SessionState.Connected }.first()
                     kotlinx.coroutines.delay(500)
-                    session.sendInput("${hostEntity.startupCommand}\n")
+                    session.sendInput("${profile.startupCommand}\n")
                 }
             }
+        } else if (result is AppResult.Error) {
+            showSnackbar("Connection failed: ${result.error.userMessage}")
         }
-    }
-
-    private fun addAndStartSession(session: ShellSession) {
-        val currentList = _sessions.value.toMutableList()
-        currentList.add(session)
-        _sessions.value = currentList
-        _activeSessionIndex.value = currentList.size - 1
-        session.start()
     }
 
     // ----------------------------------------------------
@@ -321,7 +379,7 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
         val session = activeSession.value ?: return
         if (command.isNotBlank()) {
             viewModelScope.launch {
-                repository.recordHistory(command, session.hostLabel)
+                historyUseCases.recordHistory(command, session.hostLabel)
             }
         }
 
@@ -333,7 +391,6 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
         val session = activeSession.value ?: return
 
         if (_ctrlLatched.value) {
-            // Apply Ctrl modifier to single characters
             _ctrlLatched.value = false
             if (text.length == 1) {
                 val c = text.first().uppercaseChar()
@@ -351,20 +408,22 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun sendSpecialKey(key: TerminalKey) {
-        val session = activeSession.value ?: return
-        session.sendSpecialKey(key)
+        sessionManager.sendSpecialKeyToActive(key)
         triggerHaptic()
     }
 
     fun sendTextSnippet(text: String) {
-        val session = activeSession.value ?: return
-        session.sendInput(text)
+        sessionManager.sendInputToActive(text)
         triggerHaptic()
     }
 
     fun clearCurrentTerminal() {
-        activeSession.value?.clear()
+        sessionManager.clearActiveTerminal()
         triggerHaptic()
+    }
+
+    fun resizeTerminal(cols: Int, rows: Int, widthPx: Int = 0, heightPx: Int = 0) {
+        sessionManager.resizeActiveTerminal(cols, rows, widthPx, heightPx)
     }
 
     // ----------------------------------------------------
@@ -381,27 +440,38 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
     fun executeSnippet(snippet: SnippetEntity, resolvedCommand: String) {
         _selectedSnippetForRun.value = null
         viewModelScope.launch {
-            repository.incrementSnippetUsage(snippet.id)
-            repository.recordHistory(resolvedCommand, activeSession.value?.hostLabel ?: "Terminal")
+            val domainSnippet = snippet.toDomain()
+            snippetUseCases.executeSnippet(
+                snippet = domainSnippet,
+                targetHostLabel = activeSession.value?.hostLabel ?: "Terminal"
+            )
         }
 
         _currentAppTab.value = AppTab.TERMINAL
-        activeSession.value?.sendInput(resolvedCommand + "\n")
+        sessionManager.sendInputToActive(resolvedCommand + "\n")
         showSnackbar("Executed: ${snippet.title}")
         triggerHaptic()
     }
 
     fun saveSnippet(snippet: SnippetEntity) {
         viewModelScope.launch {
-            repository.saveSnippet(snippet)
-            showSnackbar("Saved snippet: ${snippet.title}")
+            val result = snippetUseCases.saveSnippet(snippet.toDomain())
+            if (result is AppResult.Success) {
+                showSnackbar("Saved snippet: ${snippet.title}")
+            } else if (result is AppResult.Error) {
+                showSnackbar("Failed to save snippet: ${result.error.userMessage}")
+            }
         }
     }
 
     fun deleteSnippet(snippet: SnippetEntity) {
         viewModelScope.launch {
-            repository.deleteSnippet(snippet)
-            showSnackbar("Deleted snippet: ${snippet.title}")
+            val result = snippetUseCases.deleteSnippet(snippet.toDomain())
+            if (result is AppResult.Success) {
+                showSnackbar("Deleted snippet: ${snippet.title}")
+            } else if (result is AppResult.Error) {
+                showSnackbar("Failed to delete snippet: ${result.error.userMessage}")
+            }
         }
     }
 
@@ -410,39 +480,50 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
     // ----------------------------------------------------
     fun saveHost(host: HostEntity) {
         viewModelScope.launch {
-            repository.saveHost(host)
-            showSnackbar("Saved host: ${host.label}")
+            val result = hostUseCases.saveHost(host.toDomain())
+            if (result is AppResult.Success) {
+                showSnackbar("Saved host: ${host.label}")
+            } else if (result is AppResult.Error) {
+                showSnackbar("Failed to save host: ${result.error.userMessage}")
+            }
         }
     }
 
     fun deleteHost(host: HostEntity) {
         viewModelScope.launch {
-            repository.deleteHost(host)
-            showSnackbar("Deleted host: ${host.label}")
+            val result = hostUseCases.deleteHost(host.toDomain())
+            if (result is AppResult.Success) {
+                showSnackbar("Deleted host: ${host.label}")
+            } else if (result is AppResult.Error) {
+                showSnackbar("Failed to delete host: ${result.error.userMessage}")
+            }
         }
     }
 
     fun toggleHostFavorite(host: HostEntity) {
         viewModelScope.launch {
-            repository.toggleHostFavorite(host)
+            hostUseCases.toggleFavorite(host.id, !host.isFavorite)
         }
     }
 
     fun pingHost(host: HostEntity) {
         viewModelScope.launch {
-            val latency = repository.pingHost(host)
-            if (latency != null) {
-                showSnackbar("${host.label}: ${latency}ms latency")
-            } else {
-                showSnackbar("${host.label}: Host unreachable")
+            when (val result = hostUseCases.pingHost(host.toDomain())) {
+                is AppResult.Success -> {
+                    showSnackbar("${host.label}: ${result.data}ms latency")
+                }
+                is AppResult.Error -> {
+                    showSnackbar("${host.label}: ${result.error.userMessage}")
+                }
+                is AppResult.Loading -> {}
             }
         }
     }
 
     fun pingAllHosts() {
         viewModelScope.launch {
-            val list = hosts.value
-            list.forEach { repository.pingHost(it) }
+            val list = domainHosts.value
+            list.forEach { hostUseCases.pingHost(it) }
             showSnackbar("Pinged ${list.size} hosts")
         }
     }
@@ -452,26 +533,37 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
     // ----------------------------------------------------
     fun generateRsaKey(title: String, keySize: Int = 2048) {
         viewModelScope.launch {
-            try {
-                val newKey = repository.generateRsaKeyPair(title, keySize)
-                showSnackbar("Generated SSH Key: ${newKey.title}")
-            } catch (e: Exception) {
-                showSnackbar("Key generation failed: ${e.message}")
+            when (val result = keyUseCases.generateKeyPair(title, keySize)) {
+                is AppResult.Success -> {
+                    showSnackbar("Generated SSH Key: ${result.data.title}")
+                }
+                is AppResult.Error -> {
+                    showSnackbar("Key generation failed: ${result.error.userMessage}")
+                }
+                is AppResult.Loading -> {}
             }
         }
     }
 
     fun saveCustomKey(key: KeyEntity) {
         viewModelScope.launch {
-            repository.saveKey(key)
-            showSnackbar("Saved key: ${key.title}")
+            val result = keyUseCases.saveKey(key.toDomain())
+            if (result is AppResult.Success) {
+                showSnackbar("Saved key: ${key.title}")
+            } else if (result is AppResult.Error) {
+                showSnackbar("Failed to save key: ${result.error.userMessage}")
+            }
         }
     }
 
     fun deleteKey(key: KeyEntity) {
         viewModelScope.launch {
-            repository.deleteKey(key)
-            showSnackbar("Deleted key: ${key.title}")
+            val result = keyUseCases.deleteKey(key.toDomain())
+            if (result is AppResult.Success) {
+                showSnackbar("Deleted key: ${key.title}")
+            } else if (result is AppResult.Error) {
+                showSnackbar("Failed to delete key: ${result.error.userMessage}")
+            }
         }
     }
 
@@ -496,7 +588,7 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     // ----------------------------------------------------
-    // Haptics and Bell
+    // Haptics and Bell Feedback
     // ----------------------------------------------------
     private fun triggerHaptic() {
         if (!_hapticFeedbackEnabled.value) return
@@ -508,6 +600,7 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
                     VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
                 )
             } else {
+                @Suppress("DEPRECATION")
                 val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     vibrator?.vibrate(VibrationEffect.createOneShot(15, VibrationEffect.DEFAULT_AMPLITUDE))
@@ -516,18 +609,19 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
                     vibrator?.vibrate(15)
                 }
             }
-        } catch (e: Exception) {
-            // Ignore if vibration unsupported
+        } catch (_: Throwable) {
+            // Ignore if vibration unsupported or in test environment
         }
     }
 
-    private fun onTerminalBell() {
+    fun onTerminalBell() {
         if (!_hapticFeedbackEnabled.value) return
         try {
             val context = getApplication<Application>()
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
             } else {
+                @Suppress("DEPRECATION")
                 context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             }
 
@@ -537,7 +631,7 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
                 @Suppress("DEPRECATION")
                 vibrator?.vibrate(80)
             }
-        } catch (e: Exception) {
+        } catch (_: Throwable) {
             // Ignore
         }
     }

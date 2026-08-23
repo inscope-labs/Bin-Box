@@ -28,3 +28,21 @@ class PingHostUseCase(private val hostRepository: IHostRepository) {
     suspend operator fun invoke(profile: ConnectionProfile): AppResult<Long> =
         hostRepository.pingHost(profile)
 }
+
+data class HostUseCases(
+    val getHosts: GetHostsUseCase,
+    val saveHost: SaveHostUseCase,
+    val deleteHost: DeleteHostUseCase,
+    val toggleFavorite: ToggleFavoriteHostUseCase,
+    val pingHost: PingHostUseCase
+) {
+    companion object {
+        fun create(hostRepository: IHostRepository): HostUseCases = HostUseCases(
+            getHosts = GetHostsUseCase(hostRepository),
+            saveHost = SaveHostUseCase(hostRepository),
+            deleteHost = DeleteHostUseCase(hostRepository),
+            toggleFavorite = ToggleFavoriteHostUseCase(hostRepository),
+            pingHost = PingHostUseCase(hostRepository)
+        )
+    }
+}

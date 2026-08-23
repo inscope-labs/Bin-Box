@@ -47,13 +47,18 @@ object BinBoxLogger {
             ringBuffer.pollFirst()
         }
 
-        // Print to Android Logcat
-        when (level) {
-            LogLevel.VERBOSE -> Log.v(tag, message, throwable)
-            LogLevel.DEBUG -> Log.d(tag, message, throwable)
-            LogLevel.INFO -> Log.i(tag, message, throwable)
-            LogLevel.WARN -> Log.w(tag, message, throwable)
-            LogLevel.ERROR -> Log.e(tag, message, throwable)
+        // Print to Android Logcat with JVM fallback
+        try {
+            when (level) {
+                LogLevel.VERBOSE -> Log.v(tag, message, throwable)
+                LogLevel.DEBUG -> Log.d(tag, message, throwable)
+                LogLevel.INFO -> Log.i(tag, message, throwable)
+                LogLevel.WARN -> Log.w(tag, message, throwable)
+                LogLevel.ERROR -> Log.e(tag, message, throwable)
+            }
+        } catch (_: Throwable) {
+            println("[$level][$tag] $message")
+            throwable?.printStackTrace()
         }
     }
 

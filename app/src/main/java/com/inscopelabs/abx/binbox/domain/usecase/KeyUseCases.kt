@@ -23,3 +23,19 @@ class GenerateKeyPairUseCase(private val keyRepository: IKeyRepository) {
     suspend operator fun invoke(title: String, keySize: Int = 2048): AppResult<SshKey> =
         keyRepository.generateRsaKeyPair(title, keySize)
 }
+
+data class KeyUseCases(
+    val getKeys: GetKeysUseCase,
+    val saveKey: SaveKeyUseCase,
+    val deleteKey: DeleteKeyUseCase,
+    val generateKeyPair: GenerateKeyPairUseCase
+) {
+    companion object {
+        fun create(keyRepository: IKeyRepository): KeyUseCases = KeyUseCases(
+            getKeys = GetKeysUseCase(keyRepository),
+            saveKey = SaveKeyUseCase(keyRepository),
+            deleteKey = DeleteKeyUseCase(keyRepository),
+            generateKeyPair = GenerateKeyPairUseCase(keyRepository)
+        )
+    }
+}

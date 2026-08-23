@@ -49,3 +49,22 @@ class ExecuteSnippetUseCase(
         return AppResult.Success(resolvedCommand)
     }
 }
+
+data class SnippetUseCases(
+    val getSnippets: GetSnippetsUseCase,
+    val saveSnippet: SaveSnippetUseCase,
+    val deleteSnippet: DeleteSnippetUseCase,
+    val executeSnippet: ExecuteSnippetUseCase
+) {
+    companion object {
+        fun create(
+            snippetRepository: ISnippetRepository,
+            historyRepository: IHistoryRepository
+        ): SnippetUseCases = SnippetUseCases(
+            getSnippets = GetSnippetsUseCase(snippetRepository),
+            saveSnippet = SaveSnippetUseCase(snippetRepository),
+            deleteSnippet = DeleteSnippetUseCase(snippetRepository),
+            executeSnippet = ExecuteSnippetUseCase(snippetRepository, historyRepository)
+        )
+    }
+}

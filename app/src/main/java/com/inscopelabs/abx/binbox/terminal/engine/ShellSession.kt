@@ -42,6 +42,8 @@ interface ShellSession {
     val state: StateFlow<SessionState>
     val lines: StateFlow<List<TerminalLine>>
     val rawLogText: String
+    val bytesReceived: StateFlow<Long> get() = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    val bytesSent: StateFlow<Long> get() = kotlinx.coroutines.flow.MutableStateFlow(0L)
 
     fun start()
     fun sendInput(text: String)
@@ -50,6 +52,7 @@ interface ShellSession {
     fun clear()
     fun disconnect()
     fun updateTheme(theme: TerminalThemePreset)
+    fun resize(cols: Int, rows: Int, widthPx: Int = 0, heightPx: Int = 0) {}
 }
 
 // ----------------------------------------------------
@@ -76,6 +79,12 @@ class SshShellSession(
     private val ansiParser = AnsiParser(initialTheme, onBell)
     private val _lines = MutableStateFlow<List<TerminalLine>>(emptyList())
     override val lines: StateFlow<List<TerminalLine>> = _lines.asStateFlow()
+
+    private val _bytesReceived = MutableStateFlow(0L)
+    override val bytesReceived: StateFlow<Long> = _bytesReceived.asStateFlow()
+
+    private val _bytesSent = MutableStateFlow(0L)
+    override val bytesSent: StateFlow<Long> = _bytesSent.asStateFlow()
 
     private val logBuffer = StringBuilder()
     override val rawLogText: String
@@ -132,6 +141,7 @@ class SshShellSession(
                 while (isActive && shellChannel.isConnected) {
                     val read = inputStream?.read(buffer) ?: -1
                     if (read > 0) {
+                        _bytesReceived.value += read
                         val chunk = String(buffer, 0, read, Charsets.UTF_8)
                         appendOutput(chunk)
                     } else if (read == -1) {
@@ -151,12 +161,24 @@ class SshShellSession(
         }
     }
 
+    override fun resize(cols: Int, rows: Int, widthPx: Int, heightPx: Int) {
+        scope.launch {
+            try {
+                channel?.setPtySize(cols, rows, widthPx.coerceAtLeast(640), heightPx.coerceAtLeast(480))
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+    }
+
     override fun sendInput(text: String) {
         scope.launch {
             try {
                 outputStream?.let {
-                    it.write(text.toByteArray(Charsets.UTF_8))
+                    val bytes = text.toByteArray(Charsets.UTF_8)
+                    it.write(bytes)
                     it.flush()
+                    _bytesSent.value += bytes.size
                 }
             } catch (e: Exception) {
                 appendBanner("\r\n\u001B[31m[Write Error: ${e.message}]\u001B[0m\r\n")
@@ -263,6 +285,12 @@ class LocalShellSession(
     private val _lines = MutableStateFlow<List<TerminalLine>>(emptyList())
     override val lines: StateFlow<List<TerminalLine>> = _lines.asStateFlow()
 
+    private val _bytesReceived = MutableStateFlow(0L)
+    override val bytesReceived: StateFlow<Long> = _bytesReceived.asStateFlow()
+
+    private val _bytesSent = MutableStateFlow(0L)
+    override val bytesSent: StateFlow<Long> = _bytesSent.asStateFlow()
+
     private val logBuffer = StringBuilder()
     override val rawLogText: String
         get() = logBuffer.toString()
@@ -301,6 +329,7 @@ class LocalShellSession(
                 while (isActive) {
                     val read = processIn?.read(buffer) ?: -1
                     if (read > 0) {
+                        _bytesReceived.value += read
                         val text = String(buffer, 0, read, Charsets.UTF_8)
                         appendOutput(text)
                     } else if (read == -1) {
@@ -321,8 +350,10 @@ class LocalShellSession(
         scope.launch {
             try {
                 processOut?.let {
-                    it.write(text.toByteArray(Charsets.UTF_8))
+                    val bytes = text.toByteArray(Charsets.UTF_8)
+                    it.write(bytes)
                     it.flush()
+                    _bytesSent.value += bytes.size
                 }
             } catch (e: Exception) {
                 // Ignore
@@ -549,6 +580,12 @@ class SandboxDemoShellSession(
     private val ansiParser = AnsiParser(initialTheme, onBell)
     private val _lines = MutableStateFlow<List<TerminalLine>>(emptyList())
     override val lines: StateFlow<List<TerminalLine>> = _lines.asStateFlow()
+
+    private val _bytesReceived = MutableStateFlow(0L)
+    override val bytesReceived: StateFlow<Long> = _bytesReceived.asStateFlow()
+
+    private val _bytesSent = MutableStateFlow(0L)
+    override val bytesSent: StateFlow<Long> = _bytesSent.asStateFlow()
 
     private val logBuffer = StringBuilder()
     override val rawLogText: String

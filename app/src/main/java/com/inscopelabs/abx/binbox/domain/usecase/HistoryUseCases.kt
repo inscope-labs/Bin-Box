@@ -18,3 +18,17 @@ class ClearHistoryUseCase(private val historyRepository: IHistoryRepository) {
     suspend operator fun invoke(): AppResult<Unit> =
         historyRepository.clearHistory()
 }
+
+data class HistoryUseCases(
+    val getHistory: GetHistoryUseCase,
+    val recordHistory: RecordHistoryUseCase,
+    val clearHistory: ClearHistoryUseCase
+) {
+    companion object {
+        fun create(historyRepository: IHistoryRepository): HistoryUseCases = HistoryUseCases(
+            getHistory = GetHistoryUseCase(historyRepository),
+            recordHistory = RecordHistoryUseCase(historyRepository),
+            clearHistory = ClearHistoryUseCase(historyRepository)
+        )
+    }
+}
