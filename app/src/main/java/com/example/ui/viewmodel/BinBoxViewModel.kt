@@ -16,6 +16,9 @@ import com.example.data.entity.SnippetEntity
 import com.example.data.repository.BinBoxRepository
 import com.example.terminal.engine.*
 import com.example.terminal.model.*
+import com.example.ui.i18n.AppLanguage
+import com.example.ui.i18n.AppStrings
+import com.example.ui.i18n.Translations
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -65,6 +68,17 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
     val currentAppTab = _currentAppTab.asStateFlow()
 
     // Terminal Appearance & Settings
+    private val prefs = application.getSharedPreferences("binbox_prefs", Context.MODE_PRIVATE)
+
+    private val _appLanguage = MutableStateFlow(
+        AppLanguage.fromCode(prefs.getString("pref_language", AppLanguage.SYSTEM.code) ?: AppLanguage.SYSTEM.code)
+    )
+    val appLanguage = _appLanguage.asStateFlow()
+
+    val strings: StateFlow<AppStrings> = _appLanguage.map { lang ->
+        Translations.getStringsFor(lang)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, Translations.getStringsFor(_appLanguage.value))
+
     private val _currentTheme = MutableStateFlow(TerminalThemes.MonokaiPro)
     val currentTheme = _currentTheme.asStateFlow()
 
@@ -127,6 +141,21 @@ class BinBoxViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setAppTab(tab: AppTab) {
         _currentAppTab.value = tab
+    }
+
+    fun setLanguage(lang: AppLanguage) {
+        _appLanguage.value = lang
+        prefs.edit().putString("pref_language", lang.code).apply()
+        showSnackbar("Language updated: ${lang.displayName}")
+    }
+
+    fun resetPreferences() {
+        setLanguage(AppLanguage.SYSTEM)
+        setTheme(TerminalThemes.MonokaiPro)
+        setFontSize(13)
+        setCursorStyle(CursorStyle.BLOCK)
+        toggleHapticFeedback(true)
+        showSnackbar("Preferences reset to defaults")
     }
 
     fun setTheme(theme: TerminalThemePreset) {

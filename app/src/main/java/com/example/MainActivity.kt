@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.components.*
+import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.AppTab
 import com.example.ui.viewmodel.BinBoxViewModel
@@ -34,8 +35,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            BinBoxTheme {
-                BinBoxApp()
+            val viewModel: BinBoxViewModel = viewModel()
+            val strings by viewModel.strings.collectAsStateWithLifecycle()
+
+            CompositionLocalProvider(LocalAppStrings provides strings) {
+                BinBoxTheme {
+                    BinBoxApp(viewModel = viewModel)
+                }
             }
         }
     }
@@ -46,6 +52,7 @@ class MainActivity : ComponentActivity() {
 fun BinBoxApp(
     viewModel: BinBoxViewModel = viewModel()
 ) {
+    val strings = LocalAppStrings.current
     val currentTab by viewModel.currentAppTab.collectAsStateWithLifecycle()
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val activeIdx by viewModel.activeSessionIndex.collectAsStateWithLifecycle()
@@ -139,7 +146,7 @@ fun BinBoxApp(
                                 )
 
                                 Text(
-                                    text = if (isConnected) "CONNECTED: $activeHostTitle" else "STANDBY: BIN BOX SHELL",
+                                    text = if (isConnected) "${strings.statusConnected}: $activeHostTitle" else strings.statusStandby,
                                     color = if (isConnected) ImmersiveTextSecondary else ImmersiveTextMuted,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Medium,
@@ -166,7 +173,7 @@ fun BinBoxApp(
                     ) {
                         Icon(
                             imageVector = if (currentTab == AppTab.SETTINGS) Icons.Default.Close else Icons.Outlined.Settings,
-                            contentDescription = "Settings",
+                            contentDescription = strings.tabSettings,
                             tint = if (currentTab == AppTab.SETTINGS) ImmersivePrimary else ImmersiveTextSecondary,
                             modifier = Modifier.size(20.dp)
                         )
@@ -202,11 +209,11 @@ fun BinBoxApp(
                             }) {
                                 Icon(
                                     imageVector = if (currentTab == AppTab.TERMINAL) Icons.Default.Terminal else Icons.Outlined.Terminal,
-                                    contentDescription = "Terminal"
+                                    contentDescription = strings.tabTerminal
                                 )
                             }
                         },
-                        label = { Text("Terminal", fontSize = 11.sp, fontWeight = if (currentTab == AppTab.TERMINAL) FontWeight.Bold else FontWeight.Normal) },
+                        label = { Text(strings.tabTerminal, fontSize = 11.sp, fontWeight = if (currentTab == AppTab.TERMINAL) FontWeight.Bold else FontWeight.Normal) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = ImmersivePrimary,
                             selectedTextColor = ImmersivePrimary,
@@ -223,10 +230,10 @@ fun BinBoxApp(
                         icon = {
                             Icon(
                                 imageVector = if (currentTab == AppTab.HOSTS) Icons.Default.Dns else Icons.Outlined.Dns,
-                                contentDescription = "Hosts"
+                                contentDescription = strings.tabHosts
                             )
                         },
-                        label = { Text("Hosts", fontSize = 11.sp, fontWeight = if (currentTab == AppTab.HOSTS) FontWeight.Bold else FontWeight.Normal) },
+                        label = { Text(strings.tabHosts, fontSize = 11.sp, fontWeight = if (currentTab == AppTab.HOSTS) FontWeight.Bold else FontWeight.Normal) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = ImmersivePrimary,
                             selectedTextColor = ImmersivePrimary,
@@ -243,10 +250,10 @@ fun BinBoxApp(
                         icon = {
                             Icon(
                                 imageVector = if (currentTab == AppTab.SNIPPETS) Icons.Default.Code else Icons.Outlined.Code,
-                                contentDescription = "Scripts"
+                                contentDescription = strings.tabScripts
                             )
                         },
-                        label = { Text("Scripts", fontSize = 11.sp, fontWeight = if (currentTab == AppTab.SNIPPETS) FontWeight.Bold else FontWeight.Normal) },
+                        label = { Text(strings.tabScripts, fontSize = 11.sp, fontWeight = if (currentTab == AppTab.SNIPPETS) FontWeight.Bold else FontWeight.Normal) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = ImmersivePrimary,
                             selectedTextColor = ImmersivePrimary,
@@ -263,10 +270,10 @@ fun BinBoxApp(
                         icon = {
                             Icon(
                                 imageVector = if (currentTab == AppTab.KEYS) Icons.Default.VpnKey else Icons.Outlined.VpnKey,
-                                contentDescription = "Keys"
+                                contentDescription = strings.tabKeys
                             )
                         },
-                        label = { Text("Keys", fontSize = 11.sp, fontWeight = if (currentTab == AppTab.KEYS) FontWeight.Bold else FontWeight.Normal) },
+                        label = { Text(strings.tabKeys, fontSize = 11.sp, fontWeight = if (currentTab == AppTab.KEYS) FontWeight.Bold else FontWeight.Normal) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = ImmersivePrimary,
                             selectedTextColor = ImmersivePrimary,
@@ -283,10 +290,10 @@ fun BinBoxApp(
                         icon = {
                             Icon(
                                 imageVector = if (currentTab == AppTab.SETTINGS) Icons.Default.Settings else Icons.Outlined.Settings,
-                                contentDescription = "Settings"
+                                contentDescription = strings.tabSettings
                             )
                         },
-                        label = { Text("Settings", fontSize = 11.sp, fontWeight = if (currentTab == AppTab.SETTINGS) FontWeight.Bold else FontWeight.Normal) },
+                        label = { Text(strings.tabSettings, fontSize = 11.sp, fontWeight = if (currentTab == AppTab.SETTINGS) FontWeight.Bold else FontWeight.Normal) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = ImmersivePrimary,
                             selectedTextColor = ImmersivePrimary,

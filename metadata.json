@@ -1,6 +1,6 @@
 {
   "name": "Bin Box",
-  "description": "A modern terminal and remote host shell console for SSH, Telnet, and local sessions with custom themes, scripts, and key manager.",
+  "description": "An immersive terminal and remote host shell console for SSH, Telnet, and local sessions with multi-language localization, custom themes, scripts, and key manager.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

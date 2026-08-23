@@ -2,7 +2,6 @@ package com.example.ui.components
 
 import android.os.Build
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -28,6 +26,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.terminal.model.CursorStyle
 import com.example.terminal.model.TerminalThemePreset
 import com.example.terminal.model.TerminalThemes
+import com.example.ui.i18n.AppLanguage
+import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.BinBoxViewModel
 
@@ -37,6 +37,8 @@ fun SettingsScreen(
     viewModel: BinBoxViewModel,
     modifier: Modifier = Modifier
 ) {
+    val strings = LocalAppStrings.current
+    val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val currentTheme by viewModel.currentTheme.collectAsStateWithLifecycle()
     val fontSizeSp by viewModel.fontSizeSp.collectAsStateWithLifecycle()
     val cursorStyle by viewModel.cursorStyle.collectAsStateWithLifecycle()
@@ -68,23 +70,153 @@ fun SettingsScreen(
         ) {
             // Header
             item {
-                Column {
-                    Text(
-                        text = "Terminal Preferences",
-                        color = ImmersiveTextPrimary,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Customize rendering engine, color schemes, and shell behavior",
-                        color = ImmersiveTextSecondary,
-                        fontSize = 12.sp
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = strings.settingsTitle,
+                            color = ImmersiveTextPrimary,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = strings.settingsSubtitle,
+                            color = ImmersiveTextSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    FilledTonalButton(
+                        onClick = { viewModel.resetPreferences() },
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = ImmersiveComponent,
+                            contentColor = ImmersiveTextSecondary
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = strings.resetToDefaults, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(strings.resetToDefaults, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
 
             // ----------------------------------------------------
-            // 1. Theme Picker & Mini Live Preview
+            // 1. Language & Localization Picker
+            // ----------------------------------------------------
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = ImmersiveSurface),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, ImmersiveBorderVerySubtle)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(ImmersivePrimary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Language, null, tint = ImmersivePrimary, modifier = Modifier.size(18.dp))
+                            }
+                            Column {
+                                Text(
+                                    text = strings.languageSectionTitle,
+                                    color = ImmersiveTextPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = strings.languageSectionSubtitle,
+                                    color = ImmersiveTextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Grid of Language Selection Cards
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AppLanguage.entries.chunked(2).forEach { rowLanguages ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    rowLanguages.forEach { lang ->
+                                        val isSelected = lang == appLanguage
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = if (isSelected) ImmersivePrimary.copy(alpha = 0.15f) else ImmersiveComponent,
+                                            border = androidx.compose.foundation.BorderStroke(
+                                                width = if (isSelected) 1.5.dp else 1.dp,
+                                                color = if (isSelected) ImmersivePrimary else ImmersiveBorderVerySubtle
+                                            ),
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable { viewModel.setLanguage(lang) }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    Text(text = lang.flagEmoji, fontSize = 18.sp)
+                                                    Column {
+                                                        Text(
+                                                            text = lang.nativeName,
+                                                            color = if (isSelected) ImmersivePrimary else ImmersiveTextPrimary,
+                                                            fontSize = 12.sp,
+                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                                        )
+                                                        if (lang.displayName != lang.nativeName && lang != AppLanguage.SYSTEM) {
+                                                            Text(
+                                                                text = lang.displayName,
+                                                                color = ImmersiveTextMuted,
+                                                                fontSize = 10.sp
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.CheckCircle,
+                                                        contentDescription = "Selected",
+                                                        tint = ImmersivePrimary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (rowLanguages.size == 1) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ----------------------------------------------------
+            // 2. Theme Picker & Mini Live Preview
             // ----------------------------------------------------
             item {
                 Card(
@@ -94,13 +226,13 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Color Scheme & Theme",
+                            text = strings.themeSectionTitle,
                             color = ImmersiveTextPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Select ANSI palette preset for all terminal sessions",
+                            text = strings.themeSectionSubtitle,
                             color = ImmersiveTextSecondary,
                             fontSize = 12.sp
                         )
@@ -134,20 +266,26 @@ fun SettingsScreen(
                                 Text(
                                     text = "root@binbox:~# neofetch",
                                     color = currentTheme.green,
-                                    fontSize = fontSizeSp.sp,
+                                    fontSize = 11.sp,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "OS: Linux aarch64 [Android Runtime]",
+                                    text = "OS: Linux 6.8.0-abx-binbox aarch64",
                                     color = currentTheme.cyan,
-                                    fontSize = fontSizeSp.sp,
+                                    fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
                                 Text(
-                                    text = "Shell: /system/bin/sh (UTF-8 VT100/Xterm)",
+                                    text = "Shell: binbox-sh 2.4.0 (xterm-256color)",
                                     color = currentTheme.yellow,
-                                    fontSize = fontSizeSp.sp,
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = "Memory: 1,420MiB / 8,192MiB",
+                                    color = currentTheme.foregroundColor,
+                                    fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
                                 Row(
@@ -173,7 +311,7 @@ fun SettingsScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // Theme Selection Grid / Chips
+                        // Theme Chips Row
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -218,7 +356,7 @@ fun SettingsScreen(
             }
 
             // ----------------------------------------------------
-            // 2. Typography & Font Size Slider
+            // 3. Typography & Font Size Slider
             // ----------------------------------------------------
             item {
                 Card(
@@ -232,7 +370,7 @@ fun SettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Font Size", color = ImmersiveTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Text(strings.fontSizeTitle, color = ImmersiveTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                             Text("${fontSizeSp}sp", color = ImmersivePrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                         }
 
@@ -252,7 +390,7 @@ fun SettingsScreen(
             }
 
             // ----------------------------------------------------
-            // 3. Cursor Style Picker
+            // 4. Cursor Style Picker
             // ----------------------------------------------------
             item {
                 Card(
@@ -261,7 +399,7 @@ fun SettingsScreen(
                     border = androidx.compose.foundation.BorderStroke(1.dp, ImmersiveBorderVerySubtle)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Cursor Style", color = ImmersiveTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Text(strings.cursorStyleTitle, color = ImmersiveTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(10.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -302,7 +440,7 @@ fun SettingsScreen(
             }
 
             // ----------------------------------------------------
-            // 4. Haptic & Interaction Feedback
+            // 5. Haptic & Interaction Feedback
             // ----------------------------------------------------
             item {
                 Card(
@@ -317,8 +455,8 @@ fun SettingsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Haptic Vibration", color = ImmersiveTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                                Text("Tactile keypress feedback & terminal bell buzz", color = ImmersiveTextSecondary, fontSize = 12.sp)
+                                Text(strings.hapticTitle, color = ImmersiveTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                Text(strings.hapticSubtitle, color = ImmersiveTextSecondary, fontSize = 12.sp)
                             }
                             Switch(
                                 checked = hapticFeedbackEnabled,
@@ -336,7 +474,7 @@ fun SettingsScreen(
             }
 
             // ----------------------------------------------------
-            // 5. Local System & Shell Engine Telemetry
+            // 6. Local System & Shell Engine Telemetry
             // ----------------------------------------------------
             item {
                 Card(
@@ -358,15 +496,16 @@ fun SettingsScreen(
                             ) {
                                 Icon(Icons.Default.Info, null, tint = ImmersivePrimary, modifier = Modifier.size(18.dp))
                             }
-                            Text("Local Android Host Shell", color = ImmersiveTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            Text(strings.hostShellInfoTitle, color = ImmersiveTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        DetailRow("OS Kernel", System.getProperty("os.name") + " " + (System.getProperty("os.version") ?: "Linux"))
-                        DetailRow("CPU Architecture", System.getProperty("os.arch") ?: "aarch64")
-                        DetailRow("Android SDK Level", "API ${Build.VERSION.SDK_INT} (${Build.VERSION.RELEASE})")
+                        DetailRow(strings.osKernelLabel, System.getProperty("os.name") + " " + (System.getProperty("os.version") ?: "Linux"))
+                        DetailRow(strings.cpuArchLabel, System.getProperty("os.arch") ?: "aarch64")
+                        DetailRow(strings.buildTargetLabel, "API ${Build.VERSION.SDK_INT} (${Build.VERSION.RELEASE})")
                         DetailRow("Device Hardware", "${Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${Build.MODEL}")
+                        DetailRow(strings.packageIdLabel, "com.inscopelabs.abx.bin-box")
                         DetailRow("SSH Engine", "JSch / Modern Native Socket Engine")
                     }
                 }
