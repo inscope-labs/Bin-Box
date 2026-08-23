@@ -10,33 +10,74 @@ This plan expands the existing Bin Box foundation into a provider-independent te
 
 **Objective:** Establish the production Android/Kotlin foundation and provider-independent terminal architecture.
 
-### Deliverables
-- **Android Application:**
-  - Application ID: `com.inscopelabs.abx.bin-box`
-  - Namespace: `com.inscopelabs.abx.bin-box`
-- **Clean Architecture Packages:**
-  - `ui`
-  - `domain`
-  - `data`
-  - `network`
-  - `session`
-  - `terminal`
-  - `security`
-  - `providers`
-- **Kotlin Data Models:**
-  - `VmStatus`
-  - `TerminalSession`
-  - `ConnectionProfile`
-  - `ShellProfile`
-  - `TerminalSessionState`
-- Repository interfaces.
-- Dependency injection foundation.
-- Coroutines and structured concurrency.
-- Configuration/environment abstraction.
-- Application-wide logging and diagnostics.
-
 ### Architectural Principle
-> The terminal core must not know whether it is connected to Oracle, Termux, SSH, WebSocket, or another provider.
+> The terminal core must not know whether it is connected to Oracle, Termux, Local Shell, SSH, WebSocket, or any other infrastructure provider.
+
+### Functional Integration Steps
+
+#### Step 1.1 — Package Hierarchy & Clean Architecture Stratification
+- **Goal:** Structure the codebase into strict Clean Architecture layers under `com.inscopelabs.abx.binbox`.
+- **Package Layout:**
+  - `core` (dispatchers, logging, common exceptions, Result wrappers)
+  - `domain.model` (provider-agnostic entities, enums, value objects)
+  - `domain.repository` (abstract interfaces for data and session operations)
+  - `data.database` (Room entities, DAOs, migrations)
+  - `data.repository` (concrete Room & local repository implementations)
+  - `security` (KeyStore encryption, biometric prompt wrappers, secure storage)
+  - `session` (session multiplexing, lifecycle, state machines)
+  - `terminal` (ANSI parser, buffer, styles, input translation)
+  - `network` / `providers` (SSH, Local PTY/Process, WebSocket, Oracle Cloud)
+  - `ui` (theme, components, navigation, ViewModels)
+- **Deliverables:**
+  - `AppResult<T>` sealed class hierarchy (`Success`, `Error`, `Loading`).
+  - `AppError` typed failure model (`NetworkError`, `AuthError`, `CryptoError`, `IoError`).
+  - `CoroutineDispatchers` abstraction with injectable IO, Default, Main, and Unconfined for testability.
+
+#### Step 1.2 — Domain Entities & Core Contracts
+- **Goal:** Formulate all provider-independent models and repository contracts.
+- **Entities & Models:**
+  - `ConnectionProfile`: Host ID, label, host/IP, port, username, auth type (Password, Key, Agent), terminal theme, keepalive interval.
+  - `TerminalSession`: Session UUID, profile reference, state (`DISCONNECTED`, `CONNECTING`, `AUTHENTICATING`, `CONNECTED`, `FAILED`), active buffer, creation timestamp.
+  - `ShellProfile`: Shell path (`/bin/bash`, `/bin/zsh`, `/bin/sh`), custom env vars, startup commands, term type (`xterm-256color`).
+  - `VmStatus`: State (`RUNNING`, `STOPPED`, `PROVISIONING`, `TERMINATED`), CPU utilization, memory usage, uptime, IP addresses.
+- **Repository Contracts:**
+  - `IHostRepository`, `IKeyRepository`, `ISnippetRepository`, `IHistoryRepository`.
+  - `ISessionRepository` (in-memory & persisted active session descriptors).
+
+#### Step 1.3 — Security Subsystem & KeyStore Integration
+- **Goal:** Implement secure credential, passphrase, and SSH key management backed by Android KeyStore.
+- **Deliverables:**
+  - `SecureStorageService`: AES-256-GCM hardware-backed encryption with MasterKeys.
+  - `SshKeyManager`: RSA (2048/4096) and Ed25519 key generation, OpenSSH public key formatting, PKCS#8 export/import.
+  - Safe in-memory clearance for sensitive byte arrays and char arrays.
+
+#### Step 1.4 — Transport & Session Lifecycle Abstraction
+- **Goal:** Define the unified transport interface that decouples terminal execution from the underlying network protocol.
+- **Deliverables:**
+  - `ITransport` interface: `connect()`, `disconnect()`, `sendData(data: ByteArray)`, `resize(cols: Int, rows: Int)`, `stateFlow: StateFlow<TransportState>`.
+  - `TransportListener`: Event callbacks for data reception, connection closed, and errors.
+  - `SessionManager`: Multi-session coordinator tracking active sessions, focus management, auto-reconnect backoff policies, and heartbeat monitors.
+
+#### Step 1.5 — Dependency Injection & Service Container
+- **Goal:** Establish a lightweight, testable dependency container and ViewModel factory.
+- **Deliverables:**
+  - `BinBoxContainer`: Factory/Singleton lifecycle container providing database instances, repositories, security services, and session managers.
+  - `ViewModelFactory`: Parameterized Compose ViewModel resolution with clean lifecycle management.
+
+#### Step 1.6 — Diagnostics, Telemetry & Logging Engine
+- **Goal:** Build an internal diagnostic and event pipeline for auditing and live performance tracking.
+- **Deliverables:**
+  - `BinBoxLogger`: Configurable log levels (Debug, Info, Warn, Error) with structured tags and in-memory circular log ring for export.
+  - `SystemDiagnosticsCollector`: Runtime OS version, kernel info, CPU architecture, memory footprint, and network status checks.
+  - Real-time latency and throughput telemetry trackers for open sessions.
+
+#### Step 1.7 — Baseline Unit & Robolectric Verification Suite
+- **Goal:** Validate all domain models, repositories, crypto tools, and session state machines with automated JVM tests.
+- **Deliverables:**
+  - Unit tests for `SshKeyManager` key generation and validation.
+  - Unit tests for `SessionManager` state transitions and multiplexing.
+  - Unit tests for `Room` DAO interactions and repository mappings.
+  - Execution of `gradle :app:testDebugUnitTest` to guarantee a 100% green baseline.
 
 ---
 
