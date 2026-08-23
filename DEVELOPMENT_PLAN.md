@@ -278,6 +278,145 @@ TerminalProvider
 
 ---
 
+## Phase 11 — Semantic Stream Ingestion & Smart Token-Budget Windowing
+
+**Objective:** Transform raw ANSI terminal byte streams into structured, token-efficient formats optimized for LLMs and autonomous agents without context window exhaustion.
+
+```
+Raw ANSI Stream ──▶ ANSI/PTY State Reducer ──▶ Smart Log Folder ──▶ Structured Token Snapshot
+```
+
+### Deliverables
+- **ANSI & PTY State Reducer:** Filter spinner animations, escape sequences, and screen clearing artifacts into pristine semantic text diffs.
+- **Smart Log Folding:** Intelligently collapse high-volume build outputs (Maven, Gradle, Webpack, test dumps) while preserving exit codes and exact error stack traces.
+- **Interactive Prompt Detector:** Regex and state-machine heuristic listener for CLI queries (`[y/N]`, `sudo` password prompts, OAuth verification URLs, pagers) surfacing structured callback events.
+- **Dynamic Token-Budget Windowing:** Adjustable sliding-window snapshot generator enabling agents to consume terminal context within constrained token budgets.
+
+---
+
+## Phase 12 — Agentic Co-Pilot & "Human-in-the-Loop" (HITL) Safety Gateways
+
+**Objective:** Enable collaborative, supervisory execution between human engineers and autonomous agents on shared terminal sessions.
+
+```
+Agent Intent ──▶ Command Policy Filter ──▶ HITL Gatekeeper ──▶ Multiplexed PTY
+                       ▲                         ▲
+                       │                         │
+                  Safety Rules            Biometric / User Tap
+```
+
+### Deliverables
+- **Two-Way Multiplexed PTY:** Allow human engineers and autonomous agents to simultaneously attach to and inspect the same live terminal session.
+- **Granular Command Policy Filter:** Configurable policy engine classifying commands into safe (read-only) vs. mutating/destructive (`rm -rf`, `systemctl`, `iptables`, `dd`).
+- **HITL Permission Gates:** Intercept destructive or mutating agent commands, prompting the user for approval via biometric or one-tap UI confirmation.
+- **Visual Agent Intent Overlays:** Terminal buffer annotations displaying agent rationale, command previews, and projected impact prior to execution.
+
+---
+
+## Phase 13 — Model Context Protocol (MCP) & Agent Tool Server
+
+**Objective:** Standardize Bin Box as an external execution backend for agent architectures using the open Model Context Protocol.
+
+```
+AI Agent / Framework (Claude, Gemini, LangChain)
+                      │
+                      ▼ [MCP JSON-RPC / SSE]
+            Bin Box Embedded MCP Server
+                      │
+        ┌─────────────┼──────────────┐
+        ▼             ▼              ▼
+  binbox_exec   binbox_read    binbox_fs
+```
+
+### Deliverables
+- **Embedded MCP Server Endpoint:** Expose Bin Box terminal sessions via local WebSocket/SSE following Model Context Protocol standards.
+- **Core MCP Tool Definitions:**
+  - `binbox_exec(sessionId, command, timeout, background)`
+  - `binbox_read_tail(sessionId, lines, filter)`
+  - `binbox_get_env(sessionId)`
+  - `binbox_upload_file(sessionId, remotePath, contentBase64)`
+  - `binbox_list_sessions()`
+- **Local Daemon & Token Authentication:** Secure, loopback-bound IPC daemon with rotating bearer tokens for safe workstation-to-device and on-device agent communication.
+
+---
+
+## Phase 14 — Session Time-Travel, Telemetry & Differential State Snapping
+
+**Objective:** Provide complete deterministic session playback, environmental diffing, and fine-tuning dataset generation.
+
+### Deliverables
+- **Asciinema-Compatible Recording:** Capture timestamped I/O stream packets for complete terminal auditability, replay, and sharing.
+- **Environment & State Diffing:** Track working directories (`pwd`), environment variable mutations, Git branch statuses, and active child PIDs across command execution boundaries.
+- **Session Time-Travel Scrubbing:** Interactive timeline slider in the UI to scrub back to any historical point in the session buffer.
+- **Dataset Export Pipeline:** Clean export of command-prompt-response sequences formatted for agent fine-tuning and evaluation harnesses.
+
+---
+
+## Phase 15 — Resilient Auto-Reconnection & Headless Background Execution
+
+**Objective:** Eliminate session loss caused by mobile network drops, device sleep, or background process hibernation during long-running workflows.
+
+```
+Mobile Foreground / Background ──▶ Native tmux / Session Daemon ──▶ Remote Host Shell
+                                              │
+                                              ▼
+                                 Android System Notification
+```
+
+### Deliverables
+- **Native Remote Session Multiplexing:** Built-in auto-attachment to `tmux` / `screen` sessions on remote hosts and Oracle VMs to survive connection loss.
+- **Mobile Lifecycle State Preserver:** Serialize session state to persistent disk cache upon Android activity backgrounding or process termination.
+- **Background Task Monitor & Notification Engine:** Monitor long-running tasks in the background and dispatch rich Android system notifications with interactive action buttons upon completion, error, or prompt blocker.
+- **Smart Exponential Backoff Reconnection:** Dynamic reconnect strategy with jitter and socket health telemetry.
+
+---
+
+## Phase 16 — Server Ecosystem & One-Click Package/Plugin Hub (cPanel / App Store Model)
+
+**Objective:** Equip Bin Box with an automated package, stack, and plugin manager inspired by cPanel / WHM / Softaculous, allowing engineers to bootstrap fresh servers and Oracle VMs with full development stacks, databases, web servers, AI agent runtimes, and security tooling in one click.
+
+```
+                  Bin Box Hub (Catalog)
+                            │
+        ┌───────────────────┼───────────────────┐
+        ▼                   ▼                   ▼
+  Dev Stacks (Node,    Web / Services      AI Agent Runtimes
+  Python, Rust, Go)   (Nginx, Docker,     (Ollama, MCP Servers,
+                       Postgres, Redis)    FastAPI, LangGraph)
+                            │
+                            ▼
+        ┌───────────────────────────────────────┐
+        │  Remote OS Package & Service Manager  │
+        │  (apt, dnf, pacman, brew, docker, pip) │
+        └───────────────────────────────────────┘
+                            │
+                            ▼
+               [Live Provisioning Stream]
+```
+
+### Deliverables
+- **Curated Server Software Catalog (App Store):**
+  - **Runtimes & SDKs:** Node.js (nvm), Python (pyenv/uv), Rust, Go, Java, Bun, Deno.
+  - **Web Servers & Proxies:** Nginx, Caddy (auto-HTTPS), Traefik, Apache.
+  - **Databases & Caches:** PostgreSQL, Redis, MySQL/MariaDB, MongoDB, SQLite.
+  - **Containers & Virtualization:** Docker, Docker Compose, Podman, Kubernetes (k3s).
+  - **AI & Agent Stacks:** Ollama (local LLMs), vLLM, HuggingFace CLI, Model Context Protocol (MCP) server runners, LiteLLM.
+  - **Security & Ops Tools:** UFW firewall, Fail2ban, Certbot/Let's Encrypt SSL, WireGuard VPN, Netdata, Prometheus/Grafana agent.
+- **One-Click Automated Provisioning Engine:**
+  - Dynamic OS detection (Ubuntu/Debian, CentOS/RHEL/Oracle Linux, Alpine, Arch, macOS/Darwin).
+  - Non-interactive script execution with real-time progress streaming into a dedicated terminal drawer.
+  - Automatic dependency resolution and post-install health checks (e.g., verifying `systemctl status` or listening ports).
+- **Service & Plugin Lifecycle Management:**
+  - Live status cards for installed components (Running / Stopped / Not Installed).
+  - One-tap lifecycle controls: Start, Stop, Restart, Enable on Boot, and Uninstall/Purge.
+  - Configuration file quick-editor (e.g., quick edit `nginx.conf`, `redis.conf`, `.env`).
+  - Port and firewall rule management for newly installed services.
+- **Custom Community Recipes & Template Bundles:**
+  - Exportable server blueprints / recipes (e.g., "Full-Stack Node + Postgres", "AI Inference Host", "Minimal Hardened VPS").
+  - User-defined provisioning scripts with variable parameterization.
+
+---
+
 ## Summary Matrix
 
 | Phase | Capability | Result |
@@ -292,5 +431,11 @@ TerminalProvider
 | **8** | Workspaces | Multiple shells / sessions / workspaces |
 | **9** | Security & Reliability | Production-grade terminal security & recovery |
 | **10** | ABX Execution Plane | Extensible multi-agent / multi-shell platform |
+| **11** | Semantic Stream Ingestion | Token-budget windowing & ANSI state reduction |
+| **12** | Agentic Co-Pilot & HITL | Two-way multiplexed PTY & supervisory safety gates |
+| **13** | MCP & Agent Tool Server | Model Context Protocol (MCP) tool integration |
+| **14** | Session Time-Travel & State Diff | Asciinema recording, state diffing & dataset export |
+| **15** | Resilient Headless Execution | Remote `tmux` multiplexing & background task alerts |
+| **16** | Server Ecosystem & App Hub | cPanel-style 1-click stack installer & service manager |
 
 > **Core Architectural Rule:** *Bin Box is the terminal; providers are execution environments.*
