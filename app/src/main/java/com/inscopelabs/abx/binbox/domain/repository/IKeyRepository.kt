@@ -9,4 +9,5 @@ interface IKeyRepository {
     suspend fun getKeyById(id: Long): SshKey?
     suspend fun saveKey(key: SshKey): AppResult<Long>
     suspend fun deleteKey(key: SshKey): AppResult<Unit>
+    suspend fun generateRsaKeyPair(title: String, keySize: Int = 2048): AppResult<SshKey>
 }

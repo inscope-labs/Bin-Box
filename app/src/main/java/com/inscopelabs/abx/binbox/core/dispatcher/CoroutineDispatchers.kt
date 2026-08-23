@@ -17,9 +17,11 @@ interface CoroutineDispatchersProvider {
 /**
  * Default production implementation backed by standard Kotlin Coroutine dispatchers.
  */
-class DefaultCoroutineDispatchers(
+open class DefaultCoroutineDispatchers(
     override val main: CoroutineDispatcher = Dispatchers.Main,
     override val io: CoroutineDispatcher = Dispatchers.IO,
     override val default: CoroutineDispatcher = Dispatchers.Default,
     override val unconfined: CoroutineDispatcher = Dispatchers.Unconfined
-) : CoroutineDispatchersProvider
+) : CoroutineDispatchersProvider {
+    companion object Instance : DefaultCoroutineDispatchers()
+}
