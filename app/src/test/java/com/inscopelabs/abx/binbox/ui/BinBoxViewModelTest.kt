@@ -176,6 +176,12 @@ class BinBoxViewModelTest {
                 focusFlow.value = sessionId
                 return AppResult.Success(Unit)
             }
+            override fun renameSession(sessionId: String, newTitle: String): AppResult<Unit> {
+                sessionsFlow.value = sessionsFlow.value.map {
+                    if (it.sessionId == sessionId) it.copy(title = newTitle) else it
+                }
+                return AppResult.Success(Unit)
+            }
             override fun closeSession(sessionId: String): AppResult<Unit> {
                 sessionsFlow.value = sessionsFlow.value.filter { it.sessionId != sessionId }
                 return AppResult.Success(Unit)

@@ -8,10 +8,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.inscopelabs.abx.binbox.data.dao.HistoryDao
 import com.inscopelabs.abx.binbox.data.dao.HostDao
 import com.inscopelabs.abx.binbox.data.dao.KeyDao
+import com.inscopelabs.abx.binbox.data.dao.KnownHostKeyDao
 import com.inscopelabs.abx.binbox.data.dao.SnippetDao
 import com.inscopelabs.abx.binbox.data.entity.HistoryEntity
 import com.inscopelabs.abx.binbox.data.entity.HostEntity
 import com.inscopelabs.abx.binbox.data.entity.KeyEntity
+import com.inscopelabs.abx.binbox.data.entity.KnownHostKeyEntity
 import com.inscopelabs.abx.binbox.data.entity.SnippetEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,7 +24,8 @@ import kotlinx.coroutines.launch
         HostEntity::class,
         KeyEntity::class,
         SnippetEntity::class,
-        HistoryEntity::class
+        HistoryEntity::class,
+        KnownHostKeyEntity::class
     ],
     version = 2,
     exportSchema = false
@@ -32,6 +35,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun keyDao(): KeyDao
     abstract fun snippetDao(): SnippetDao
     abstract fun historyDao(): HistoryDao
+    abstract fun knownHostKeyDao(): KnownHostKeyDao
 
     companion object {
         @Volatile
