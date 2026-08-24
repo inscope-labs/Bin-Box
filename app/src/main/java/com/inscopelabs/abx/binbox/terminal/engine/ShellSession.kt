@@ -3,9 +3,6 @@ package com.inscopelabs.abx.binbox.terminal.engine
 import com.inscopelabs.abx.binbox.terminal.model.SessionState
 import com.inscopelabs.abx.binbox.terminal.model.TerminalLine
 import com.inscopelabs.abx.binbox.terminal.model.TerminalThemePreset
-import com.jcraft.jsch.ChannelShell
-import com.jcraft.jsch.JSch
-import com.jcraft.jsch.Session
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -56,18 +53,18 @@ interface ShellSession {
 }
 
 // ----------------------------------------------------
-// SSH Shell Session (JSch)
+// SSH Shell Session — delegates to SshTransport (Phase 3/5)
 // ----------------------------------------------------
 class SshShellSession(
     override val id: String = UUID.randomUUID().toString(),
     override val title: String,
     override val hostLabel: String,
-    private val host: String,
-    private val port: Int = 22,
-    private val username: String,
-    private val password: String? = null,
-    private val privateKey: String? = null,
-    private val privateKeyPassphrase: String? = null,
+    host: String,
+    port: Int = 22,
+    username: String,
+    password: String? = null,
+    privateKey: String? = null,
+    privateKeyPassphrase: String? = null,
     private var initialTheme: TerminalThemePreset,
     private val onBell: (() -> Unit)? = null
 ) : ShellSession {
@@ -90,100 +87,55 @@ class SshShellSession(
     override val rawLogText: String
         get() = logBuffer.toString()
 
-    private var jschSession: Session? = null
-    private var channel: ChannelShell? = null
-    private var outputStream: OutputStream? = null
-    private var inputStream: InputStream? = null
+    // All JSch-specific connection logic now lives inside SshTransport.
+    // This class knows only about the ITransport contract.
+    private val transport: com.inscopelabs.abx.binbox.transport.ITransport =
+        com.inscopelabs.abx.binbox.transport.SshTransport(
+            host = host,
+            port = port,
+            username = username,
+            password = password,
+            privateKey = privateKey,
+            privateKeyPassphrase = privateKeyPassphrase
+        )
+
+    init {
+        transport.setListener(object : com.inscopelabs.abx.binbox.transport.TransportListener {
+            override fun onDataReceived(data: ByteArray) {
+                appendOutput(String(data, Charsets.UTF_8))
+            }
+
+            override fun onClosed(reason: String?) {
+                appendBanner("\r\n\u001B[33m[${reason ?: "Connection closed"}]\u001B[0m\r\n")
+            }
+
+            override fun onError(message: String, cause: Throwable?) {
+                appendBanner("\r\n\u001B[31m✖ SSH Error: $message\u001B[0m\r\n")
+            }
+        })
+
+        scope.launch { transport.state.collect { _state.value = it } }
+        scope.launch { transport.bytesReceived.collect { _bytesReceived.value = it } }
+        scope.launch { transport.bytesSent.collect { _bytesSent.value = it } }
+    }
 
     override fun start() {
         if (_state.value == SessionState.Connected || _state.value == SessionState.Connecting) return
-
-        _state.value = SessionState.Connecting
-        appendBanner("Connecting to $username@$host:$port via SSH...\r\n")
-
+        appendBanner("Connecting to $hostLabel via SSH...\r\n")
         scope.launch {
-            try {
-                val jsch = JSch()
-
-                if (!privateKey.isNullOrBlank()) {
-                    val keyBytes = privateKey.toByteArray(Charsets.UTF_8)
-                    val passBytes = privateKeyPassphrase?.takeIf { it.isNotEmpty() }?.toByteArray(Charsets.UTF_8)
-                    jsch.addIdentity("custom_id", keyBytes, null, passBytes)
-                }
-
-                val session = jsch.getSession(username, host, port)
-                if (!password.isNullOrBlank()) {
-                    session.setPassword(password)
-                }
-
-                val config = Properties()
-                config["StrictHostKeyChecking"] = "no"
-                config["PreferredAuthentications"] = "publickey,password,keyboard-interactive"
-                session.setConfig(config)
-                session.timeout = 15000
-
-                session.connect()
-                jschSession = session
-
-                val shellChannel = session.openChannel("shell") as ChannelShell
-                shellChannel.setPtyType("xterm-256color", 80, 24, 640, 480)
-                channel = shellChannel
-
-                outputStream = shellChannel.outputStream
-                inputStream = shellChannel.inputStream
-
-                shellChannel.connect(10000)
-                _state.value = SessionState.Connected
-                appendBanner("\u001B[32m✔ Connected to $hostLabel ($host:$port)\u001B[0m\r\n\r\n")
-
-                // Read Loop
-                val buffer = ByteArray(4096)
-                while (isActive && shellChannel.isConnected) {
-                    val read = inputStream?.read(buffer) ?: -1
-                    if (read > 0) {
-                        _bytesReceived.value += read
-                        val chunk = String(buffer, 0, read, Charsets.UTF_8)
-                        appendOutput(chunk)
-                    } else if (read == -1) {
-                        break
-                    }
-                }
-
-                _state.value = SessionState.Disconnected
-                appendBanner("\r\n\u001B[33m[Connection closed by remote host]\u001B[0m\r\n")
-            } catch (e: Exception) {
-                val errorMsg = e.message ?: "Connection failed"
-                _state.value = SessionState.Error(errorMsg)
-                appendBanner("\r\n\u001B[31m✖ SSH Error: $errorMsg\u001B[0m\r\n")
-            } finally {
-                cleanup()
+            transport.connect()
+            if (transport.state.value == SessionState.Connected) {
+                appendBanner("\u001B[32m✔ Connected to $hostLabel\u001B[0m\r\n\r\n")
             }
         }
     }
 
     override fun resize(cols: Int, rows: Int, widthPx: Int, heightPx: Int) {
-        scope.launch {
-            try {
-                channel?.setPtySize(cols, rows, widthPx.coerceAtLeast(640), heightPx.coerceAtLeast(480))
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
+        transport.resize(cols, rows, widthPx, heightPx)
     }
 
     override fun sendInput(text: String) {
-        scope.launch {
-            try {
-                outputStream?.let {
-                    val bytes = text.toByteArray(Charsets.UTF_8)
-                    it.write(bytes)
-                    it.flush()
-                    _bytesSent.value += bytes.size
-                }
-            } catch (e: Exception) {
-                appendBanner("\r\n\u001B[31m[Write Error: ${e.message}]\u001B[0m\r\n")
-            }
-        }
+        transport.sendData(text.toByteArray(Charsets.UTF_8))
     }
 
     override fun sendSpecialKey(key: TerminalKey) {
@@ -209,16 +161,7 @@ class SshShellSession(
     }
 
     override fun sendRawBytes(bytes: ByteArray) {
-        scope.launch {
-            try {
-                outputStream?.let {
-                    it.write(bytes)
-                    it.flush()
-                }
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
+        transport.sendData(bytes)
     }
 
     override fun clear() {
@@ -227,11 +170,7 @@ class SshShellSession(
     }
 
     override fun disconnect() {
-        scope.launch {
-            cleanup()
-            _state.value = SessionState.Disconnected
-            appendBanner("\r\n\u001B[33m[Session disconnected by user]\u001B[0m\r\n")
-        }
+        transport.disconnect()
     }
 
     override fun updateTheme(theme: TerminalThemePreset) {
@@ -247,22 +186,6 @@ class SshShellSession(
         logBuffer.append(chunk)
         ansiParser.feed(chunk)
         _lines.value = ansiParser.getLines()
-    }
-
-    private fun cleanup() {
-        try {
-            outputStream?.close()
-            inputStream?.close()
-            channel?.disconnect()
-            jschSession?.disconnect()
-        } catch (e: Exception) {
-            // Ignore
-        } finally {
-            outputStream = null
-            inputStream = null
-            channel = null
-            jschSession = null
-        }
     }
 }
 
