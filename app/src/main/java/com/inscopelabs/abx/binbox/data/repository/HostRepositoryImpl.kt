@@ -11,6 +11,8 @@ import com.inscopelabs.abx.binbox.data.mapper.toEntity
 import com.inscopelabs.abx.binbox.domain.model.ConnectionProfile
 import com.inscopelabs.abx.binbox.domain.model.ProtocolType
 import com.inscopelabs.abx.binbox.domain.repository.IHostRepository
+import com.inscopelabs.abx.binbox.security.CredentialCrypto
+import com.inscopelabs.abx.binbox.security.SecureStorageService
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -20,22 +22,23 @@ import java.net.Socket
 
 class HostRepositoryImpl(
     private val hostDao: HostDao,
+    private val secureStorage: SecureStorageService,
     private val dispatchers: CoroutineDispatchersProvider = DefaultCoroutineDispatchers
 ) : IHostRepository {
 
     override fun getAllHosts(): Flow<List<ConnectionProfile>> {
         return hostDao.getAllHosts()
-            .map { list -> list.map { it.toDomain() } }
+            .map { list -> list.map { it.toDomain().withDecryptedSecrets() } }
             .flowOn(dispatchers.io)
     }
 
     override suspend fun getHostById(id: Long): ConnectionProfile? = withContext(dispatchers.io) {
-        hostDao.getHostById(id)?.toDomain()
+        hostDao.getHostById(id)?.toDomain()?.withDecryptedSecrets()
     }
 
     override suspend fun saveHost(profile: ConnectionProfile): AppResult<Long> = withContext(dispatchers.io) {
         try {
-            val entity = profile.toEntity()
+            val entity = profile.withEncryptedSecrets().toEntity()
             val id = if (entity.id == 0L) {
                 hostDao.insertHost(entity)
             } else {
@@ -52,7 +55,7 @@ class HostRepositoryImpl(
 
     override suspend fun deleteHost(profile: ConnectionProfile): AppResult<Unit> = withContext(dispatchers.io) {
         try {
-            hostDao.deleteHost(profile.toEntity())
+            hostDao.deleteHost(profile.withEncryptedSecrets().toEntity())
             BinBoxLogger.d("HostRepository", "Host deleted: ${profile.label}")
             AppResult.Success(Unit)
         } catch (e: Throwable) {
@@ -99,4 +102,14 @@ class HostRepositoryImpl(
             AppResult.Error(AppError.NetworkError("Host unreachable: ${e.message}", e))
         }
     }
+
+    private fun ConnectionProfile.withEncryptedSecrets(): ConnectionProfile = copy(
+        password = CredentialCrypto.encryptField(secureStorage, password),
+        keyPassphrase = CredentialCrypto.encryptField(secureStorage, keyPassphrase)
+    )
+
+    private fun ConnectionProfile.withDecryptedSecrets(): ConnectionProfile = copy(
+        password = CredentialCrypto.decryptField(secureStorage, password),
+        keyPassphrase = CredentialCrypto.decryptField(secureStorage, keyPassphrase)
+    )
 }

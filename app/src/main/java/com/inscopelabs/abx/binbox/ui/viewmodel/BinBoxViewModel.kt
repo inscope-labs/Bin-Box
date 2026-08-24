@@ -30,6 +30,7 @@ import com.inscopelabs.abx.binbox.data.repository.SnippetRepositoryImpl
 import com.inscopelabs.abx.binbox.domain.model.CommandHistory
 import com.inscopelabs.abx.binbox.domain.model.ConnectionProfile
 import com.inscopelabs.abx.binbox.domain.model.ProtocolType
+import com.inscopelabs.abx.binbox.security.SecureStorageService
 import com.inscopelabs.abx.binbox.domain.model.Snippet
 import com.inscopelabs.abx.binbox.domain.model.SshKey
 import com.inscopelabs.abx.binbox.domain.usecase.HistoryUseCases
@@ -109,8 +110,9 @@ class BinBoxViewModel(
     companion object {
         private fun createDependencyGraph(application: Application): DependencyGraph {
             val db = AppDatabase.getInstance(application)
-            val hostRepo = HostRepositoryImpl(db.hostDao())
-            val keyRepo = KeyRepositoryImpl(db.keyDao())
+            val secureStorage = SecureStorageService(application)
+            val hostRepo = HostRepositoryImpl(db.hostDao(), secureStorage)
+            val keyRepo = KeyRepositoryImpl(db.keyDao(), secureStorage)
             val snippetRepo = SnippetRepositoryImpl(db.snippetDao())
             val historyRepo = HistoryRepositoryImpl(db.historyDao())
             val sessionRepo = SessionRepositoryImpl()

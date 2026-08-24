@@ -26,6 +26,7 @@ import com.inscopelabs.abx.binbox.domain.usecase.GetSnippetsUseCase
 import com.inscopelabs.abx.binbox.domain.usecase.ManageSessionUseCase
 import com.inscopelabs.abx.binbox.domain.usecase.SaveHostUseCase
 import com.inscopelabs.abx.binbox.domain.usecase.ToggleFavoriteHostUseCase
+import com.inscopelabs.abx.binbox.security.SecureStorageService
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -56,8 +57,9 @@ class RepositoryAndUseCasesTest {
             .build()
 
         val dispatchers = DefaultCoroutineDispatchers
-        hostRepo = HostRepositoryImpl(database.hostDao(), dispatchers)
-        keyRepo = KeyRepositoryImpl(database.keyDao(), dispatchers)
+        val secureStorage = SecureStorageService(context)
+        hostRepo = HostRepositoryImpl(database.hostDao(), secureStorage, dispatchers)
+        keyRepo = KeyRepositoryImpl(database.keyDao(), secureStorage, dispatchers)
         snippetRepo = SnippetRepositoryImpl(database.snippetDao(), dispatchers)
         historyRepo = HistoryRepositoryImpl(database.historyDao(), dispatchers)
         sessionRepo = SessionRepositoryImpl()

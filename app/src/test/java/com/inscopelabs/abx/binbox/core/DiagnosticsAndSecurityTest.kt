@@ -131,4 +131,36 @@ class DiagnosticsAndSecurityTest {
         assertEquals(0.toByte(), testSecret[0])
         assertEquals(0.toByte(), decrypted[0])
     }
+
+    @Test
+    fun testCredentialCrypto_roundTripsAndTagsCiphertext() {
+        val storage = SecureStorageService(app)
+
+        val encrypted = com.inscopelabs.abx.binbox.security.CredentialCrypto.encryptField(storage, "hunter2")
+        assertNotNull(encrypted)
+        assertTrue(encrypted!!.startsWith("ENC1:"))
+        assertTrue(encrypted != "hunter2")
+
+        val decrypted = com.inscopelabs.abx.binbox.security.CredentialCrypto.decryptField(storage, encrypted)
+        assertEquals("hunter2", decrypted)
+    }
+
+    @Test
+    fun testCredentialCrypto_legacyPlaintextPassesThroughUnchanged() {
+        val storage = SecureStorageService(app)
+
+        // A row written before CredentialCrypto existed has no ENC1: prefix.
+        // It must come back unchanged, not be treated as corrupt ciphertext.
+        val legacyValue = "plaintext-password-from-before-phase-9"
+        val result = com.inscopelabs.abx.binbox.security.CredentialCrypto.decryptField(storage, legacyValue)
+        assertEquals(legacyValue, result)
+    }
+
+    @Test
+    fun testCredentialCrypto_nullAndBlankPassThrough() {
+        val storage = SecureStorageService(app)
+        assertEquals(null, com.inscopelabs.abx.binbox.security.CredentialCrypto.encryptField(storage, null))
+        assertEquals(null, com.inscopelabs.abx.binbox.security.CredentialCrypto.decryptField(storage, null))
+        assertEquals("", com.inscopelabs.abx.binbox.security.CredentialCrypto.encryptField(storage, ""))
+    }
 }

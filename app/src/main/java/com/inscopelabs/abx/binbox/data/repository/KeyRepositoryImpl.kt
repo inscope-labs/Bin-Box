@@ -11,6 +11,8 @@ import com.inscopelabs.abx.binbox.data.mapper.toDomain
 import com.inscopelabs.abx.binbox.data.mapper.toEntity
 import com.inscopelabs.abx.binbox.domain.model.SshKey
 import com.inscopelabs.abx.binbox.domain.repository.IKeyRepository
+import com.inscopelabs.abx.binbox.security.CredentialCrypto
+import com.inscopelabs.abx.binbox.security.SecureStorageService
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -23,22 +25,23 @@ import java.security.interfaces.RSAPublicKey
 
 class KeyRepositoryImpl(
     private val keyDao: KeyDao,
+    private val secureStorage: SecureStorageService,
     private val dispatchers: CoroutineDispatchersProvider = DefaultCoroutineDispatchers
 ) : IKeyRepository {
 
     override fun getAllKeys(): Flow<List<SshKey>> {
         return keyDao.getAllKeys()
-            .map { list -> list.map { it.toDomain() } }
+            .map { list -> list.map { it.toDomain().withDecryptedPrivateKey() } }
             .flowOn(dispatchers.io)
     }
 
     override suspend fun getKeyById(id: Long): SshKey? = withContext(dispatchers.io) {
-        keyDao.getKeyById(id)?.toDomain()
+        keyDao.getKeyById(id)?.toDomain()?.withDecryptedPrivateKey()
     }
 
     override suspend fun saveKey(key: SshKey): AppResult<Long> = withContext(dispatchers.io) {
         try {
-            val id = keyDao.insertKey(key.toEntity())
+            val id = keyDao.insertKey(key.withEncryptedPrivateKey().toEntity())
             BinBoxLogger.d("KeyRepository", "Saved key: ${key.title} (ID: $id)")
             AppResult.Success(id)
         } catch (e: Throwable) {
@@ -49,7 +52,7 @@ class KeyRepositoryImpl(
 
     override suspend fun deleteKey(key: SshKey): AppResult<Unit> = withContext(dispatchers.io) {
         try {
-            keyDao.deleteKey(key.toEntity())
+            keyDao.deleteKey(key.withEncryptedPrivateKey().toEntity())
             BinBoxLogger.d("KeyRepository", "Deleted key: ${key.title}")
             AppResult.Success(Unit)
         } catch (e: Throwable) {
@@ -63,7 +66,9 @@ class KeyRepositoryImpl(
             is AppResult.Success -> {
                 val key = genResult.data
                 try {
-                    val id = keyDao.insertKey(key.toEntity())
+                    val id = keyDao.insertKey(key.withEncryptedPrivateKey().toEntity())
+                    // Caller gets the plaintext key back (e.g. for one-time display /
+                    // immediate use); only the persisted copy is encrypted.
                     val savedKey = key.copy(id = id)
                     BinBoxLogger.i("KeyRepository", "Saved generated RSA KeyPair (ID: $id, ${key.fingerprint})")
                     AppResult.Success(savedKey)
@@ -76,4 +81,10 @@ class KeyRepositoryImpl(
             is AppResult.Loading -> AppResult.Loading
         }
     }
+
+    private fun SshKey.withEncryptedPrivateKey(): SshKey =
+        copy(privateKey = CredentialCrypto.encryptField(secureStorage, privateKey) ?: privateKey)
+
+    private fun SshKey.withDecryptedPrivateKey(): SshKey =
+        copy(privateKey = CredentialCrypto.decryptField(secureStorage, privateKey) ?: "")
 }
