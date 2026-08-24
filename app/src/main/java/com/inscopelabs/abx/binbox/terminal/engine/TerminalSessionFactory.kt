@@ -82,6 +82,26 @@ class TerminalSessionFactory(
                         onBell = onBell
                     )
                 }
+
+                ProtocolType.WEBSOCKET -> {
+                    val wsUrl = if (profile.host.startsWith("ws://") || profile.host.startsWith("wss://")) {
+                        profile.host
+                    } else {
+                        val scheme = if (profile.port == 443 || profile.port == 8443) "wss" else "ws"
+                        val portPart = if (profile.port > 0) ":${profile.port}" else ""
+                        "$scheme://${profile.host}$portPart/ws/terminal"
+                    }
+
+                    WebSocketShellSession(
+                        title = profile.label.ifBlank { "WebSocket Terminal" },
+                        hostLabel = profile.host,
+                        url = wsUrl,
+                        authToken = profile.password,
+                        heartbeatIntervalSeconds = profile.keepAliveSeconds.toLong().coerceAtLeast(5L),
+                        initialTheme = theme,
+                        onBell = onBell
+                    )
+                }
             }
 
             BinBoxLogger.i(

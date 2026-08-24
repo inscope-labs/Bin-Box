@@ -9,6 +9,7 @@ import com.inscopelabs.abx.binbox.transport.LocalProcessTransport
 import com.inscopelabs.abx.binbox.transport.SshTransport
 import com.inscopelabs.abx.binbox.transport.TcpTransport
 import com.inscopelabs.abx.binbox.transport.TransportListener
+import com.inscopelabs.abx.binbox.transport.backend.WebSocketTransport
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -243,6 +244,39 @@ class TelnetShellSession(
     initialTheme = initialTheme,
     onBell = onBell,
     startupBanner = "Connecting to $host:$port via TCP/Telnet...\r\n"
+)
+
+// ----------------------------------------------------
+// WebSocket Backend Shell Session (Delegates to WebSocketTransport)
+// ----------------------------------------------------
+class WebSocketShellSession(
+    override val id: String = UUID.randomUUID().toString(),
+    override val title: String = "WebSocket Session",
+    override val hostLabel: String = "Backend Gateway",
+    url: String,
+    sessionId: String? = null,
+    authToken: String? = null,
+    customHeaders: Map<String, String> = emptyMap(),
+    heartbeatIntervalSeconds: Long = 15L,
+    structuredFraming: Boolean = true,
+    transport: WebSocketTransport = WebSocketTransport(
+        url = url,
+        sessionId = sessionId,
+        authToken = authToken,
+        customHeaders = customHeaders,
+        heartbeatIntervalSeconds = heartbeatIntervalSeconds,
+        structuredFraming = structuredFraming
+    ),
+    initialTheme: TerminalThemePreset,
+    onBell: (() -> Unit)? = null
+) : TransportShellSession(
+    id = id,
+    title = title,
+    hostLabel = hostLabel,
+    transport = transport,
+    initialTheme = initialTheme,
+    onBell = onBell,
+    startupBanner = "Connecting to $url via WebSocket Relay...\r\n"
 )
 
 // ----------------------------------------------------

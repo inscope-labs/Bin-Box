@@ -30,6 +30,7 @@ import com.inscopelabs.abx.binbox.data.repository.SnippetRepositoryImpl
 import com.inscopelabs.abx.binbox.domain.model.CommandHistory
 import com.inscopelabs.abx.binbox.domain.model.ConnectionProfile
 import com.inscopelabs.abx.binbox.domain.model.ProtocolType
+import com.inscopelabs.abx.binbox.domain.model.VmStatus
 import com.inscopelabs.abx.binbox.security.SecureStorageService
 import com.inscopelabs.abx.binbox.domain.model.Snippet
 import com.inscopelabs.abx.binbox.domain.model.SshKey
@@ -43,6 +44,9 @@ import com.inscopelabs.abx.binbox.terminal.engine.TerminalKey
 import com.inscopelabs.abx.binbox.terminal.engine.TerminalSessionFactory
 import com.inscopelabs.abx.binbox.terminal.engine.TerminalSessionManager
 import com.inscopelabs.abx.binbox.terminal.model.CursorStyle
+import com.inscopelabs.abx.binbox.transport.backend.api.BinBoxBackendClient
+import com.inscopelabs.abx.binbox.transport.backend.models.BackendDiscoveryResponse
+import com.inscopelabs.abx.binbox.transport.backend.models.ProvisionSessionRequest
 import com.inscopelabs.abx.binbox.terminal.model.SessionState
 import com.inscopelabs.abx.binbox.terminal.model.TerminalThemePreset
 import com.inscopelabs.abx.binbox.terminal.model.TerminalThemes
@@ -249,6 +253,19 @@ class BinBoxViewModel(
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
     // ----------------------------------------------------
+    // Backend Gateway & WebSocket Provider State (Phase 7)
+    // ----------------------------------------------------
+    private val backendClient = BinBoxBackendClient()
+    private val _backendDiscovery = MutableStateFlow<BackendDiscoveryResponse?>(null)
+    val backendDiscovery: StateFlow<BackendDiscoveryResponse?> = _backendDiscovery.asStateFlow()
+
+    private val _backendInstances = MutableStateFlow<List<VmStatus>>(emptyList())
+    val backendInstances: StateFlow<List<VmStatus>> = _backendInstances.asStateFlow()
+
+    private val _isBackendRefreshing = MutableStateFlow(false)
+    val isBackendRefreshing: StateFlow<Boolean> = _isBackendRefreshing.asStateFlow()
+
+    // ----------------------------------------------------
     // System Diagnostics, Telemetry & Logging Engine
     // ----------------------------------------------------
     private val diagnosticsCollector = SystemDiagnosticsCollector(application)
@@ -265,6 +282,7 @@ class BinBoxViewModel(
     init {
         refreshSystemDiagnostics()
         refreshLogs()
+        refreshBackendInstances()
         // Auto-launch demo session on initial launch if none open
         viewModelScope.launch {
             kotlinx.coroutines.delay(300)
@@ -372,6 +390,67 @@ class BinBoxViewModel(
             themeId = _currentTheme.value.id
         )
         sessionManager.launchSession(localProfile, theme = _currentTheme.value)
+    }
+
+    fun openWebSocketSession(
+        url: String,
+        label: String = "WS Relay Terminal",
+        authToken: String? = null
+    ): kotlinx.coroutines.Job = viewModelScope.launch {
+        val wsProfile = ConnectionProfile(
+            label = label,
+            host = url,
+            protocol = ProtocolType.WEBSOCKET,
+            password = authToken,
+            themeId = _currentTheme.value.id
+        )
+        val result = sessionManager.launchSession(wsProfile, theme = _currentTheme.value)
+        if (result is AppResult.Success) {
+            _currentAppTab.value = AppTab.TERMINAL
+        } else if (result is AppResult.Error) {
+            showSnackbar("WebSocket connection failed: ${result.error.userMessage}")
+        }
+    }
+
+    fun refreshBackendInstances() {
+        viewModelScope.launch {
+            _isBackendRefreshing.value = true
+            try {
+                val discoveryResult = backendClient.getDiscovery()
+                if (discoveryResult.isSuccess) {
+                    _backendDiscovery.value = discoveryResult.getOrNull()
+                }
+
+                val instancesResult = backendClient.listInstances()
+                if (instancesResult.isSuccess) {
+                    _backendInstances.value = instancesResult.getOrNull() ?: emptyList()
+                }
+            } catch (e: Exception) {
+                BinBoxLogger.e("BinBoxViewModel", "Failed to refresh backend instances", e)
+            } finally {
+                _isBackendRefreshing.value = false
+            }
+        }
+    }
+
+    fun connectToVmInstance(vm: VmStatus) {
+        val targetIp = vm.publicIp ?: vm.privateIp ?: return
+        val profile = ConnectionProfile(
+            label = vm.displayName,
+            host = targetIp,
+            port = 22,
+            protocol = ProtocolType.SSH,
+            username = "ubuntu",
+            themeId = _currentTheme.value.id
+        )
+        viewModelScope.launch {
+            val result = sessionManager.launchSession(profile, theme = _currentTheme.value)
+            if (result is AppResult.Success) {
+                _currentAppTab.value = AppTab.TERMINAL
+            } else if (result is AppResult.Error) {
+                showSnackbar("Failed to connect to VM: ${result.error.userMessage}")
+            }
+        }
     }
 
     fun connectToHost(hostEntity: HostEntity): kotlinx.coroutines.Job = viewModelScope.launch {

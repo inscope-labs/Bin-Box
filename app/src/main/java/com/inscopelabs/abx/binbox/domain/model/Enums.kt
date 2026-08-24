@@ -12,7 +12,8 @@ enum class ProtocolType {
     LOCAL_SHELL,
     DEMO_HOST,
     TELNET,
-    CUSTOM_SOCKET
+    CUSTOM_SOCKET,
+    WEBSOCKET
 }
 
 enum class TerminalSessionState {

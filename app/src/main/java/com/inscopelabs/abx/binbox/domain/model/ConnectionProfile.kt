@@ -26,6 +26,7 @@ data class ConnectionProfile(
         get() = when (protocol) {
             ProtocolType.LOCAL_SHELL -> "localhost (Local PTY)"
             ProtocolType.DEMO_HOST -> "demo.sandbox (Simulated)"
+            ProtocolType.WEBSOCKET -> if (host.startsWith("ws://") || host.startsWith("wss://")) host else "wss://$host:$port/ws"
             else -> "$username@$host:$port"
         }
 }

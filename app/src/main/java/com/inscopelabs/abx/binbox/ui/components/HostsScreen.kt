@@ -634,8 +634,15 @@ fun AddEditHostDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf("SSH", "LOCAL_SHELL", "DEMO_HOST", "TELNET").forEach { proto ->
+                        listOf("SSH", "LOCAL_SHELL", "WEBSOCKET", "DEMO_HOST").forEach { proto ->
                             val isSelected = protocol == proto
+                            val labelText = when (proto) {
+                                "SSH" -> "SSH"
+                                "LOCAL_SHELL" -> "Local"
+                                "WEBSOCKET" -> "WS Relay"
+                                "DEMO_HOST" -> "Demo"
+                                else -> proto.take(5)
+                            }
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
                                 color = if (isSelected) ImmersivePrimary else ImmersiveComponent,
@@ -649,7 +656,7 @@ fun AddEditHostDialog(
                                     modifier = Modifier.padding(vertical = 8.dp)
                                 ) {
                                     Text(
-                                        text = proto.take(6),
+                                        text = labelText,
                                         color = if (isSelected) ImmersiveOnPrimary else ImmersiveTextSecondary,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
