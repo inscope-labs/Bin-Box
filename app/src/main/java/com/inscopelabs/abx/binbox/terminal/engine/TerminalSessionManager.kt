@@ -32,9 +32,18 @@ class TerminalSessionManager(
     val activeSessionIndex: StateFlow<Int> = _activeSessionIndex.asStateFlow()
 
     private val sessionJobs = mutableMapOf<String, MutableList<kotlinx.coroutines.Job>>()
+    private val sessionMetadata = mutableMapOf<String, Pair<ConnectionProfile, ShellProfile>>()
 
     val activeSession: ShellSession?
         get() = _sessions.value.getOrNull(_activeSessionIndex.value)
+
+    fun getProfileForSession(sessionId: String): ConnectionProfile? {
+        return sessionMetadata[sessionId]?.first
+    }
+
+    fun getShellProfileForSession(sessionId: String): ShellProfile? {
+        return sessionMetadata[sessionId]?.second
+    }
 
     suspend fun launchSession(
         profile: ConnectionProfile,
@@ -44,6 +53,7 @@ class TerminalSessionManager(
         return when (val createResult = sessionFactory.createSession(profile, shellProfile, theme)) {
             is AppResult.Success -> {
                 val session = createResult.data
+                sessionMetadata[session.id] = Pair(profile, shellProfile)
                 _sessions.update { current -> current + session }
                 val newIndex = _sessions.value.size - 1
                 _activeSessionIndex.value = newIndex
@@ -55,6 +65,7 @@ class TerminalSessionManager(
                             sessionId = session.id,
                             profile = profile,
                             title = session.title,
+                            shellProfile = shellProfile,
                             state = TerminalSessionState.CONNECTING
                         )
                     )
@@ -64,11 +75,23 @@ class TerminalSessionManager(
                 val jobs = mutableListOf<kotlinx.coroutines.Job>()
 
                 // Observe session state transitions
+                var startupDispatched = false
                 val stateJob = scope.launch {
                     session.state.collect { state ->
                         val domainState = when (state) {
                             is SessionState.Connecting -> TerminalSessionState.CONNECTING
-                            is SessionState.Connected -> TerminalSessionState.CONNECTED
+                            is SessionState.Connected -> {
+                                if (!startupDispatched) {
+                                    startupDispatched = true
+                                    profile.startupCommand?.takeIf { it.isNotBlank() }?.let { cmd ->
+                                        scope.launch {
+                                            kotlinx.coroutines.delay(250)
+                                            session.sendInput(cmd + "\r\n")
+                                        }
+                                    }
+                                }
+                                TerminalSessionState.CONNECTED
+                            }
                             is SessionState.Disconnected -> TerminalSessionState.DISCONNECTED
                             is SessionState.Error -> TerminalSessionState.FAILED
                         }
@@ -100,6 +123,49 @@ class TerminalSessionManager(
                 AppResult.Loading
             }
         }
+    }
+
+    fun renameSession(index: Int, newTitle: String) {
+        val currentList = _sessions.value
+        if (index in currentList.indices && newTitle.isNotBlank()) {
+            val session = currentList[index]
+            session.title = newTitle.trim()
+            sessionRepository?.renameSession(session.id, newTitle.trim())
+            // Force state notification
+            _sessions.value = ArrayList(currentList)
+            BinBoxLogger.i("TerminalSessionManager", "Renamed session $index to: $newTitle")
+        }
+    }
+
+    fun moveSession(fromIndex: Int, toIndex: Int) {
+        val currentList = _sessions.value.toMutableList()
+        if (fromIndex in currentList.indices && toIndex in currentList.indices && fromIndex != toIndex) {
+            val activeSessionId = activeSession?.id
+            val item = currentList.removeAt(fromIndex)
+            currentList.add(toIndex, item)
+            _sessions.value = currentList
+
+            // Restore active session pointer
+            val newActiveIndex = currentList.indexOfFirst { it.id == activeSessionId }
+            if (newActiveIndex >= 0) {
+                _activeSessionIndex.value = newActiveIndex
+            }
+        }
+    }
+
+    suspend fun duplicateSession(index: Int): AppResult<ShellSession>? {
+        val currentList = _sessions.value
+        if (index in currentList.indices) {
+            val session = currentList[index]
+            val meta = sessionMetadata[session.id]
+            if (meta != null) {
+                val clonedProfile = meta.first.copy(
+                    label = "${session.title} (Clone)"
+                )
+                return launchSession(clonedProfile, meta.second)
+            }
+        }
+        return null
     }
 
     fun selectSession(index: Int) {

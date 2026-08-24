@@ -23,6 +23,9 @@ class ManageSessionUseCase(private val sessionRepository: ISessionRepository) {
     fun focusSession(sessionId: String): AppResult<Unit> =
         sessionRepository.focusSession(sessionId)
 
+    fun renameSession(sessionId: String, newTitle: String): AppResult<Unit> =
+        sessionRepository.renameSession(sessionId, newTitle)
+
     fun updateState(sessionId: String, state: TerminalSessionState, error: String? = null): AppResult<Unit> =
         sessionRepository.updateSessionState(sessionId, state, error)
 

@@ -45,6 +45,8 @@ fun HostsScreen(
 ) {
     val hosts by viewModel.hosts.collectAsStateWithLifecycle()
     val keys by viewModel.keys.collectAsStateWithLifecycle()
+    val activeWorkspace by viewModel.activeWorkspace.collectAsStateWithLifecycle()
+    val workspaces by viewModel.workspaces.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedGroupFilter by remember { mutableStateOf("All") }
@@ -52,16 +54,17 @@ fun HostsScreen(
     var hostToEdit by remember { mutableStateOf<HostEntity?>(null) }
     var showQuickConnect by remember { mutableStateOf(false) }
 
-    val groupTags = listOf("All", "Favorites", "Cloud", "HomeLab", "Production", "Local", "IoT")
+    val groupTags = listOf("All", "Favorites", "Workspace (${activeWorkspace.name})", "Cloud", "HomeLab", "Production", "Local", "IoT")
 
     val filteredHosts = hosts.filter { host ->
         val matchesQuery = host.label.contains(searchQuery, ignoreCase = true) ||
                 host.host.contains(searchQuery, ignoreCase = true) ||
                 host.username.contains(searchQuery, ignoreCase = true)
 
-        val matchesGroup = when (selectedGroupFilter) {
-            "All" -> true
-            "Favorites" -> host.isFavorite
+        val matchesGroup = when {
+            selectedGroupFilter == "All" -> true
+            selectedGroupFilter == "Favorites" -> host.isFavorite
+            selectedGroupFilter.startsWith("Workspace") -> activeWorkspace.hostProfileIds.contains(host.id)
             else -> host.groupTag.equals(selectedGroupFilter, ignoreCase = true)
         }
 
@@ -216,7 +219,64 @@ fun HostsScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            // If a workspace filter or active workspace has members, provide a quick launch action
+            if (activeWorkspace.hostProfileIds.isNotEmpty()) {
+                val workspaceHostCount = hosts.count { activeWorkspace.hostProfileIds.contains(it.id) }
+                if (workspaceHostCount > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = ImmersivePrimary.copy(alpha = 0.12f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, ImmersivePrimary.copy(alpha = 0.3f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                viewModel.launchAllInWorkspace(activeWorkspace)
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = ImmersivePrimary, modifier = Modifier.size(18.dp))
+                                Column {
+                                    Text(
+                                        "Workspace: ${activeWorkspace.name}",
+                                        color = ImmersiveTextPrimary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "$workspaceHostCount configured host${if (workspaceHostCount > 1) "s" else ""}",
+                                        color = ImmersiveTextSecondary,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = ImmersivePrimary,
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 10.dp)) {
+                                    Text(
+                                        "Launch All",
+                                        color = ImmersiveOnPrimary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             // Hosts List
             if (filteredHosts.isEmpty()) {
@@ -606,6 +666,9 @@ fun AddEditHostDialog(
     var selectedKeyId by remember { mutableStateOf<Long?>(initialHost?.keyId) }
     var groupTag by remember { mutableStateOf(initialHost?.groupTag ?: "Cloud") }
     var themeId by remember { mutableStateOf(initialHost?.themeId ?: "monokai_pro") }
+    var shellProfileId by remember { mutableStateOf(initialHost?.shellProfileId ?: "default") }
+    var initialDirectory by remember { mutableStateOf(initialHost?.initialDirectory ?: "") }
+    var envVars by remember { mutableStateOf(initialHost?.envVarsJson ?: "") }
     var startupCommand by remember { mutableStateOf(initialHost?.startupCommand ?: "") }
     var passwordVisible by remember { mutableStateOf(false) }
 
@@ -906,6 +969,86 @@ fun AddEditHostDialog(
                     }
                 }
 
+                // Shell Profile
+                item {
+                    Text("Shell Profile", color = ImmersiveTextSecondary, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("default" to "Default", "bash" to "Bash", "zsh" to "Zsh", "fish" to "Fish", "python" to "Python").forEach { (profileKey, profileName) ->
+                            val isSelected = shellProfileId == profileKey
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) ImmersivePrimary else ImmersiveComponent,
+                                border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, ImmersiveBorderVerySubtle),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { shellProfileId = profileKey }
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        text = profileName,
+                                        color = if (isSelected) ImmersiveOnPrimary else ImmersiveTextSecondary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Initial Directory
+                item {
+                    Text("Initial Working Directory (Optional)", color = ImmersiveTextSecondary, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    TextField(
+                        value = initialDirectory,
+                        onValueChange = { initialDirectory = it },
+                        placeholder = { Text("e.g. /var/www or /home/user", color = ImmersiveTextMuted) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = ImmersiveComponent,
+                            unfocusedContainerColor = ImmersiveComponent,
+                            focusedTextColor = ImmersiveTextPrimary,
+                            unfocusedTextColor = ImmersiveTextPrimary,
+                            cursorColor = ImmersivePrimary,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        singleLine = true
+                    )
+                }
+
+                // Custom Environment Variables
+                item {
+                    Text("Environment Variables (Optional)", color = ImmersiveTextSecondary, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    TextField(
+                        value = envVars,
+                        onValueChange = { envVars = it },
+                        placeholder = { Text("e.g. TERM=xterm-256color, EDITOR=vim", color = ImmersiveTextMuted) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = ImmersiveComponent,
+                            unfocusedContainerColor = ImmersiveComponent,
+                            focusedTextColor = ImmersiveTextPrimary,
+                            unfocusedTextColor = ImmersiveTextPrimary,
+                            cursorColor = ImmersivePrimary,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent
+                        ),
+                        singleLine = true
+                    )
+                }
+
                 // Startup Command
                 item {
                     Text("Startup Command (Optional)", color = ImmersiveTextSecondary, fontSize = 12.sp)
@@ -947,6 +1090,9 @@ fun AddEditHostDialog(
                         keyId = if (authType == "PRIVATE_KEY") selectedKeyId else null,
                         groupTag = groupTag,
                         themeId = themeId,
+                        shellProfileId = shellProfileId,
+                        initialDirectory = initialDirectory.takeIf { it.isNotBlank() },
+                        envVarsJson = envVars.takeIf { it.isNotBlank() },
                         startupCommand = startupCommand.takeIf { it.isNotBlank() }
                     )
                     onSave(entity)

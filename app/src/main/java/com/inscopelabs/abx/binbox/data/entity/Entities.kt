@@ -10,7 +10,7 @@ data class HostEntity(
     val label: String,
     val host: String,
     val port: Int = 22,
-    val protocol: String = "SSH", // SSH, LOCAL_SHELL, DEMO_HOST, TELNET, CUSTOM_SOCKET
+    val protocol: String = "SSH", // SSH, LOCAL_SHELL, DEMO_HOST, TELNET, CUSTOM_SOCKET, WEBSOCKET
     val username: String = "root",
     val authType: String = "PASSWORD", // PASSWORD, PRIVATE_KEY, PASSWORDLESS
     val password: String? = null,
@@ -19,6 +19,9 @@ data class HostEntity(
     val groupTag: String = "Cloud", // Cloud, HomeLab, Production, Local, IoT, Dev
     val themeId: String = "monokai_pro",
     val startupCommand: String? = null,
+    val initialDirectory: String? = null,
+    val shellProfileId: String = "default",
+    val envVarsJson: String? = null,
     val keepAliveSeconds: Int = 30,
     val isFavorite: Boolean = false,
     val lastLatencyMs: Long? = null,

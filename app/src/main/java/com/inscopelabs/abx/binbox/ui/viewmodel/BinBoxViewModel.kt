@@ -30,7 +30,9 @@ import com.inscopelabs.abx.binbox.data.repository.SnippetRepositoryImpl
 import com.inscopelabs.abx.binbox.domain.model.CommandHistory
 import com.inscopelabs.abx.binbox.domain.model.ConnectionProfile
 import com.inscopelabs.abx.binbox.domain.model.ProtocolType
+import com.inscopelabs.abx.binbox.domain.model.ShellProfile
 import com.inscopelabs.abx.binbox.domain.model.VmStatus
+import com.inscopelabs.abx.binbox.domain.model.Workspace
 import com.inscopelabs.abx.binbox.security.SecureStorageService
 import com.inscopelabs.abx.binbox.domain.model.Snippet
 import com.inscopelabs.abx.binbox.domain.model.SshKey
@@ -160,6 +162,8 @@ class BinBoxViewModel(
     val domainHosts: StateFlow<List<ConnectionProfile>> = hostUseCases.getHosts()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    val connectionProfiles: StateFlow<List<ConnectionProfile>> = domainHosts
+
     val hosts: StateFlow<List<HostEntity>> = domainHosts
         .map { list -> list.map { it.toEntity() } }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -214,11 +218,44 @@ class BinBoxViewModel(
     private val _cursorStyle = MutableStateFlow(CursorStyle.BLOCK)
     val cursorStyle: StateFlow<CursorStyle> = _cursorStyle.asStateFlow()
 
+    private val _fontFamilyName = MutableStateFlow("Monospace")
+    val fontFamilyName: StateFlow<String> = _fontFamilyName.asStateFlow()
+
+    private val _bellMode = MutableStateFlow("Vibrate")
+    val bellMode: StateFlow<String> = _bellMode.asStateFlow()
+
+    private val _bufferLineLimit = MutableStateFlow(2000)
+    val bufferLineLimit: StateFlow<Int> = _bufferLineLimit.asStateFlow()
+
+    private val _wordWrapEnabled = MutableStateFlow(true)
+    val wordWrapEnabled: StateFlow<Boolean> = _wordWrapEnabled.asStateFlow()
+
     private val _hapticFeedbackEnabled = MutableStateFlow(true)
     val hapticFeedbackEnabled: StateFlow<Boolean> = _hapticFeedbackEnabled.asStateFlow()
 
     // ----------------------------------------------------
-    // Active Sessions & Multi-Tabs
+    // Workspace Management (Phase 8)
+    // ----------------------------------------------------
+    private val _workspaces = MutableStateFlow<List<Workspace>>(Workspace.PRESETS)
+    val workspaces: StateFlow<List<Workspace>> = _workspaces.asStateFlow()
+
+    private val _activeWorkspace = MutableStateFlow<Workspace>(Workspace.PRESETS.first())
+    val activeWorkspace: StateFlow<Workspace> = _activeWorkspace.asStateFlow()
+
+    private val _isWorkspaceDialogOpen = MutableStateFlow(false)
+    val isWorkspaceDialogOpen: StateFlow<Boolean> = _isWorkspaceDialogOpen.asStateFlow()
+
+    // ----------------------------------------------------
+    // Shell Profiles (Phase 8)
+    // ----------------------------------------------------
+    private val _shellProfiles = MutableStateFlow<List<ShellProfile>>(ShellProfile.ALL_PRESETS)
+    val shellProfiles: StateFlow<List<ShellProfile>> = _shellProfiles.asStateFlow()
+
+    private val _defaultShellProfile = MutableStateFlow<ShellProfile>(ShellProfile.DEFAULT)
+    val defaultShellProfile: StateFlow<ShellProfile> = _defaultShellProfile.asStateFlow()
+
+    // ----------------------------------------------------
+    // Active Sessions, Switcher & Multi-Tabs (Phase 8)
     // ----------------------------------------------------
     val sessions: StateFlow<List<ShellSession>> = sessionManager.sessions
     val activeSessionIndex: StateFlow<Int> = sessionManager.activeSessionIndex
@@ -227,6 +264,12 @@ class BinBoxViewModel(
         if (list.isNotEmpty() && idx in list.indices) list[idx] else null
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    private val _isSessionSwitcherOpen = MutableStateFlow(false)
+    val isSessionSwitcherOpen: StateFlow<Boolean> = _isSessionSwitcherOpen.asStateFlow()
+
+    private val _renameDialogSessionIndex = MutableStateFlow<Int?>(null)
+    val renameDialogSessionIndex: StateFlow<Int?> = _renameDialogSessionIndex.asStateFlow()
+
     // Keypad Modifier States (Ctrl, Alt)
     private val _ctrlLatched = MutableStateFlow(false)
     val ctrlLatched: StateFlow<Boolean> = _ctrlLatched.asStateFlow()
@@ -234,12 +277,37 @@ class BinBoxViewModel(
     private val _altLatched = MutableStateFlow(false)
     val altLatched: StateFlow<Boolean> = _altLatched.asStateFlow()
 
-    // Buffer Search
+    // Buffer Search & Navigation (Phase 8)
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+
+    private val _isSearchCaseSensitive = MutableStateFlow(false)
+    val isSearchCaseSensitive: StateFlow<Boolean> = _isSearchCaseSensitive.asStateFlow()
+
+    private val _isSearchRegex = MutableStateFlow(false)
+    val isSearchRegex: StateFlow<Boolean> = _isSearchRegex.asStateFlow()
+
+    private val _searchMatchIndex = MutableStateFlow(0)
+    val searchMatchIndex: StateFlow<Int> = _searchMatchIndex.asStateFlow()
+
+    private val _searchMatchTotal = MutableStateFlow(0)
+    val searchMatchTotal: StateFlow<Int> = _searchMatchTotal.asStateFlow()
+
+    // Host Filters, Tags & Recents (Phase 8)
+    private val _hostFilterTag = MutableStateFlow("All")
+    val hostFilterTag: StateFlow<String> = _hostFilterTag.asStateFlow()
+
+    private val _hostSearchQuery = MutableStateFlow("")
+    val hostSearchQuery: StateFlow<String> = _hostSearchQuery.asStateFlow()
+
+    val recentHosts: StateFlow<List<ConnectionProfile>> = domainHosts.map { list ->
+        list.filter { it.lastConnectedAt != null }
+            .sortedByDescending { it.lastConnectedAt ?: 0L }
+            .take(6)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // Host Telemetry Dialog
     private val _telemetry = MutableStateFlow<ServerTelemetry?>(null)
@@ -310,7 +378,11 @@ class BinBoxViewModel(
         setLanguage(AppLanguage.SYSTEM)
         setTheme(TerminalThemes.MonokaiPro)
         setFontSize(13)
+        setFontFamily("Monospace")
         setCursorStyle(CursorStyle.BLOCK)
+        setBellMode("Vibrate")
+        setBufferLineLimit(2000)
+        setWordWrapEnabled(true)
         toggleHapticFeedback(true)
         showSnackbar("Preferences reset to defaults")
     }
@@ -322,6 +394,187 @@ class BinBoxViewModel(
 
     fun setFontSize(sizeSp: Int) {
         _fontSizeSp.value = sizeSp.coerceIn(9, 24)
+    }
+
+    fun setFontFamily(name: String) {
+        _fontFamilyName.value = name
+    }
+
+    fun setBellMode(mode: String) {
+        _bellMode.value = mode
+    }
+
+    fun setBufferLineLimit(limit: Int) {
+        _bufferLineLimit.value = limit
+    }
+
+    fun setWordWrapEnabled(enabled: Boolean) {
+        _wordWrapEnabled.value = enabled
+    }
+
+    // ----------------------------------------------------
+    // Workspace Management (Phase 8)
+    // ----------------------------------------------------
+    fun selectWorkspace(workspaceId: String) {
+        val target = _workspaces.value.firstOrNull { it.id == workspaceId }
+        if (target != null) {
+            _activeWorkspace.value = target
+            showSnackbar("Active workspace: ${target.name}")
+        }
+    }
+
+    fun switchWorkspace(workspace: Workspace) {
+        _activeWorkspace.value = workspace
+        showSnackbar("Active workspace: ${workspace.name}")
+    }
+
+    fun setWorkspaceDialogOpen(isOpen: Boolean) {
+        _isWorkspaceDialogOpen.value = isOpen
+    }
+
+    fun openWorkspaceDialog() {
+        _isWorkspaceDialogOpen.value = true
+    }
+
+    fun closeWorkspaceDialog() {
+        _isWorkspaceDialogOpen.value = false
+    }
+
+    fun createWorkspace(
+        name: String,
+        description: String = "",
+        iconName: String = "Terminal",
+        colorHex: String = "#38BDF8",
+        hostIds: List<Long> = emptyList()
+    ) {
+        val newWs = Workspace(
+            name = name.trim(),
+            description = description.trim(),
+            iconName = iconName,
+            colorHex = colorHex,
+            hostProfileIds = hostIds
+        )
+        _workspaces.value = _workspaces.value + newWs
+        _activeWorkspace.value = newWs
+        _isWorkspaceDialogOpen.value = false
+        showSnackbar("Created workspace: ${newWs.name}")
+    }
+
+    fun deleteWorkspace(workspaceId: String) {
+        val current = _workspaces.value
+        if (current.size <= 1) {
+            showSnackbar("Cannot delete the only workspace")
+            return
+        }
+        val updated = current.filter { it.id != workspaceId }
+        _workspaces.value = updated
+        if (_activeWorkspace.value.id == workspaceId) {
+            _activeWorkspace.value = updated.first()
+        }
+        showSnackbar("Workspace removed")
+    }
+
+    fun launchAllInWorkspace(workspace: Workspace) {
+        val assignedHosts = domainHosts.value.filter { workspace.hostProfileIds.contains(it.id) }
+        if (assignedHosts.isEmpty()) {
+            showSnackbar("No hosts configured in ${workspace.name}")
+            return
+        }
+        viewModelScope.launch {
+            assignedHosts.forEach { hostProfile ->
+                val shellProfile = ShellProfile.getProfileById(hostProfile.shellProfileId)
+                sessionManager.launchSession(hostProfile, shellProfile, _currentTheme.value)
+            }
+            _currentAppTab.value = AppTab.TERMINAL
+            showSnackbar("Launched ${assignedHosts.size} sessions in ${workspace.name}")
+        }
+    }
+
+    // ----------------------------------------------------
+    // Shell Profiles (Phase 8)
+    // ----------------------------------------------------
+    fun setDefaultShellProfile(profile: ShellProfile) {
+        _defaultShellProfile.value = profile
+        showSnackbar("Default shell set to: ${profile.name}")
+    }
+
+    // ----------------------------------------------------
+    // Multi-Terminal UX & Tabs (Phase 8)
+    // ----------------------------------------------------
+    fun setSessionSwitcherOpen(isOpen: Boolean) {
+        _isSessionSwitcherOpen.value = isOpen
+    }
+
+    fun openRenameDialog(index: Int) {
+        _renameDialogSessionIndex.value = index
+    }
+
+    fun closeRenameDialog() {
+        _renameDialogSessionIndex.value = null
+    }
+
+    fun renameSession(index: Int, newTitle: String) {
+        sessionManager.renameSession(index, newTitle)
+        _renameDialogSessionIndex.value = null
+        showSnackbar("Session renamed to: $newTitle")
+    }
+
+    fun moveSession(fromIndex: Int, toIndex: Int) {
+        sessionManager.moveSession(fromIndex, toIndex)
+    }
+
+    fun duplicateSession(index: Int) {
+        viewModelScope.launch {
+            val result = sessionManager.duplicateSession(index)
+            if (result is AppResult.Success) {
+                showSnackbar("Cloned session tab")
+            }
+        }
+    }
+
+    fun closeAllSessions() {
+        sessionManager.closeAllSessions()
+        _isSessionSwitcherOpen.value = false
+        showSnackbar("Closed all sessions")
+    }
+
+    // ----------------------------------------------------
+    // Host Filter Tag & Search (Phase 8)
+    // ----------------------------------------------------
+    fun setHostFilterTag(tag: String) {
+        _hostFilterTag.value = tag
+    }
+
+    fun setHostSearchQuery(query: String) {
+        _hostSearchQuery.value = query
+    }
+
+    // ----------------------------------------------------
+    // Search Navigation (Phase 8)
+    // ----------------------------------------------------
+    fun toggleSearchCaseSensitive() {
+        _isSearchCaseSensitive.value = !_isSearchCaseSensitive.value
+    }
+
+    fun toggleSearchRegex() {
+        _isSearchRegex.value = !_isSearchRegex.value
+    }
+
+    fun nextSearchMatch() {
+        if (_searchMatchTotal.value > 0) {
+            _searchMatchIndex.value = (_searchMatchIndex.value + 1) % _searchMatchTotal.value
+        }
+    }
+
+    fun prevSearchMatch() {
+        if (_searchMatchTotal.value > 0) {
+            _searchMatchIndex.value = if (_searchMatchIndex.value - 1 < 0) _searchMatchTotal.value - 1 else _searchMatchIndex.value - 1
+        }
+    }
+
+    fun setSearchMatchStats(current: Int, total: Int) {
+        _searchMatchIndex.value = current
+        _searchMatchTotal.value = total
     }
 
     fun setCursorStyle(style: CursorStyle) {

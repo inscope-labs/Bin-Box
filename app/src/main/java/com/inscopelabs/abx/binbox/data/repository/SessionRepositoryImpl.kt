@@ -97,6 +97,16 @@ class SessionRepositoryImpl : ISessionRepository {
         return AppResult.Success(Unit)
     }
 
+    override fun renameSession(sessionId: String, newTitle: String): AppResult<Unit> {
+        val session = sessionMap[sessionId] ?: return AppResult.Error(
+            AppError.SessionError("Session $sessionId not found for rename")
+        )
+        sessionMap[sessionId] = session.copy(title = newTitle, lastActiveAt = System.currentTimeMillis())
+        syncStateFlow()
+        BinBoxLogger.d("SessionRepository", "Renamed session $sessionId to $newTitle")
+        return AppResult.Success(Unit)
+    }
+
     override fun closeSession(sessionId: String): AppResult<Unit> {
         val removed = sessionMap.remove(sessionId)
         if (removed != null) {

@@ -39,7 +39,7 @@ enum class TerminalKey {
 
 interface ShellSession {
     val id: String
-    val title: String
+    var title: String
     val hostLabel: String
     val state: StateFlow<SessionState>
     val lines: StateFlow<List<TerminalLine>>
@@ -68,7 +68,7 @@ interface ShellSession {
 // ----------------------------------------------------
 open class TransportShellSession(
     override val id: String = UUID.randomUUID().toString(),
-    override val title: String,
+    override var title: String,
     override val hostLabel: String,
     val transport: ITransport,
     private var initialTheme: TerminalThemePreset,
@@ -169,7 +169,7 @@ open class TransportShellSession(
 // ----------------------------------------------------
 class SshShellSession(
     override val id: String = UUID.randomUUID().toString(),
-    override val title: String,
+    override var title: String,
     override val hostLabel: String,
     host: String,
     port: Int = 22,
@@ -203,7 +203,7 @@ class SshShellSession(
 // ----------------------------------------------------
 class LocalShellSession(
     override val id: String = UUID.randomUUID().toString(),
-    override val title: String = "Local Shell",
+    override var title: String = "Local Shell",
     override val hostLabel: String = "localhost",
     command: List<String>? = null,
     workingDir: File? = null,
@@ -232,7 +232,7 @@ class LocalShellSession(
 // ----------------------------------------------------
 class TelnetShellSession(
     override val id: String = UUID.randomUUID().toString(),
-    override val title: String,
+    override var title: String,
     override val hostLabel: String,
     host: String,
     port: Int = 23,
@@ -253,7 +253,7 @@ class TelnetShellSession(
 // ----------------------------------------------------
 class WebSocketShellSession(
     override val id: String = UUID.randomUUID().toString(),
-    override val title: String = "WebSocket Session",
+    override var title: String = "WebSocket Session",
     override val hostLabel: String = "Backend Gateway",
     url: String,
     sessionId: String? = null,
@@ -286,7 +286,7 @@ class WebSocketShellSession(
 // ----------------------------------------------------
 class SandboxDemoShellSession(
     override val id: String = UUID.randomUUID().toString(),
-    override val title: String = "Cloud Linux Demo",
+    override var title: String = "Cloud Linux Demo",
     override val hostLabel: String = "vps-demo.binbox.io",
     private var initialTheme: TerminalThemePreset,
     private val onBell: (() -> Unit)? = null

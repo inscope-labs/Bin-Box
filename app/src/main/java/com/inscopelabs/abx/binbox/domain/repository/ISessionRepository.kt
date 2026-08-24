@@ -16,6 +16,7 @@ interface ISessionRepository {
     fun updateSessionDimensions(sessionId: String, cols: Int, rows: Int): AppResult<Unit>
     fun recordSessionTraffic(sessionId: String, bytesIn: Long, bytesOut: Long): AppResult<Unit>
     fun focusSession(sessionId: String): AppResult<Unit>
+    fun renameSession(sessionId: String, newTitle: String): AppResult<Unit>
     fun closeSession(sessionId: String): AppResult<Unit>
     fun closeAllSessions(): AppResult<Unit>
 }

@@ -72,9 +72,18 @@ fun TerminalScreen(
     val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
+    val activeWorkspace by viewModel.activeWorkspace.collectAsStateWithLifecycle()
+    val workspaces by viewModel.workspaces.collectAsStateWithLifecycle()
+    val connectionProfiles by viewModel.connectionProfiles.collectAsStateWithLifecycle()
+    val renameDialogSessionIndex by viewModel.renameDialogSessionIndex.collectAsStateWithLifecycle()
+    val isSessionSwitcherOpen by viewModel.isSessionSwitcherOpen.collectAsStateWithLifecycle()
+    val isWorkspaceDialogOpen by viewModel.isWorkspaceDialogOpen.collectAsStateWithLifecycle()
 
     var inputText by remember { mutableStateOf("") }
     val inputFocusRequester = remember { FocusRequester() }
+    var isCaseSensitive by remember { mutableStateOf(false) }
+    var isRegexMode by remember { mutableStateOf(false) }
+    var showWorkspaceDropdown by remember { mutableStateOf(false) }
 
     // Session lines observation
     val sessionLines by (activeSession?.lines?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(emptyList()) })
@@ -114,74 +123,262 @@ fun TerminalScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                // Workspace Selector Pill
+                Box {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = ImmersiveComponent,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, ImmersiveBorderVerySubtle),
+                        modifier = Modifier
+                            .clickable { showWorkspaceDropdown = true }
+                            .testTag("workspace_pill_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val wsColor = try {
+                                Color(android.graphics.Color.parseColor(activeWorkspace.colorHex))
+                            } catch (_: Exception) {
+                                ImmersivePrimary
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(wsColor)
+                            )
+                            Text(
+                                text = activeWorkspace.name,
+                                color = ImmersiveTextPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Icon(
+                                Icons.Default.ArrowDropDown,
+                                contentDescription = "Switch workspace",
+                                tint = ImmersiveTextSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = showWorkspaceDropdown,
+                        onDismissRequest = { showWorkspaceDropdown = false },
+                        modifier = Modifier
+                            .background(ImmersiveSurface)
+                            .border(1.dp, ImmersiveBorderSubtle, RoundedCornerShape(12.dp))
+                    ) {
+                        Text(
+                            text = "Workspaces",
+                            color = ImmersiveTextMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                        workspaces.forEach { ws ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        val color = try {
+                                            Color(android.graphics.Color.parseColor(ws.colorHex))
+                                        } catch (_: Exception) {
+                                            ImmersivePrimary
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .clip(CircleShape)
+                                                .background(color)
+                                        )
+                                        Text(ws.name, color = if (ws.id == activeWorkspace.id) ImmersivePrimary else ImmersiveTextPrimary, fontSize = 13.sp)
+                                    }
+                                },
+                                trailingIcon = {
+                                    if (ws.id == activeWorkspace.id) {
+                                        Icon(Icons.Default.Check, null, tint = ImmersivePrimary, modifier = Modifier.size(16.dp))
+                                    }
+                                },
+                                onClick = {
+                                    showWorkspaceDropdown = false
+                                    viewModel.switchWorkspace(ws)
+                                }
+                            )
+                        }
+                        HorizontalDivider(color = ImmersiveBorderVerySubtle)
+                        DropdownMenuItem(
+                            text = { Text("+ New Workspace", color = ImmersivePrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold) },
+                            leadingIcon = { Icon(Icons.Default.Add, null, tint = ImmersivePrimary, modifier = Modifier.size(16.dp)) },
+                            onClick = {
+                                showWorkspaceDropdown = false
+                                viewModel.openWorkspaceDialog()
+                            }
+                        )
+                    }
+                }
+
                 // Session Tabs List
                 LazyRow(
                     modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     itemsIndexed(sessions) { index, session ->
                         val isSelected = index == activeIdx
                         val tabState by session.state.collectAsStateWithLifecycle()
+                        var showTabOptions by remember { mutableStateOf(false) }
 
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) ImmersiveComponent else ImmersiveSurfaceElevated,
-                            border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, ImmersivePrimary.copy(alpha = 0.6f)) else androidx.compose.foundation.BorderStroke(1.dp, ImmersiveBorderVerySubtle),
-                            modifier = Modifier
-                                .clickable { viewModel.selectSession(index) }
-                                .testTag("session_tab_$index")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        Box {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) ImmersiveComponent else ImmersiveSurfaceElevated,
+                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, ImmersivePrimary.copy(alpha = 0.6f)) else androidx.compose.foundation.BorderStroke(1.dp, ImmersiveBorderVerySubtle),
+                                modifier = Modifier
+                                    .clickable { viewModel.selectSession(index) }
+                                    .testTag("session_tab_$index")
                             ) {
-                                // Status Dot
-                                Box(
-                                    modifier = Modifier
-                                        .size(7.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            when (tabState) {
-                                                is SessionState.Connected -> ImmersiveStatusGreen
-                                                is SessionState.Connecting -> ImmersiveStatusAmber
-                                                is SessionState.Error -> ImmersiveStatusRed
-                                                is SessionState.Disconnected -> ImmersiveTextMuted
-                                            }
-                                        )
-                                )
-
-                                Text(
-                                    text = session.title,
-                                    color = if (isSelected) ImmersivePrimary else ImmersiveTextSecondary,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-
-                                // Close Tab Button
-                                IconButton(
-                                    onClick = { viewModel.closeSession(index) },
-                                    modifier = Modifier.size(18.dp)
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Close session",
-                                        tint = if (isSelected) ImmersiveTextPrimary else ImmersiveTextMuted,
-                                        modifier = Modifier.size(12.dp)
+                                    // Status Dot
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                when (tabState) {
+                                                    is SessionState.Connected -> ImmersiveStatusGreen
+                                                    is SessionState.Connecting -> ImmersiveStatusAmber
+                                                    is SessionState.Error -> ImmersiveStatusRed
+                                                    is SessionState.Disconnected -> ImmersiveTextMuted
+                                                }
+                                            )
+                                    )
+
+                                    Text(
+                                        text = session.title,
+                                        color = if (isSelected) ImmersivePrimary else ImmersiveTextSecondary,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+
+                                    // Tab Menu Dropdown Trigger
+                                    IconButton(
+                                        onClick = { showTabOptions = true },
+                                        modifier = Modifier.size(16.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MoreVert,
+                                            contentDescription = "Tab options",
+                                            tint = if (isSelected) ImmersiveTextPrimary else ImmersiveTextMuted,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+
+                                    // Close Tab Button
+                                    IconButton(
+                                        onClick = { viewModel.closeSession(index) },
+                                        modifier = Modifier.size(16.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Close session",
+                                            tint = if (isSelected) ImmersiveTextPrimary else ImmersiveTextMuted,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = showTabOptions,
+                                onDismissRequest = { showTabOptions = false },
+                                modifier = Modifier
+                                    .background(ImmersiveSurface)
+                                    .border(1.dp, ImmersiveBorderSubtle, RoundedCornerShape(12.dp))
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Rename Tab", color = ImmersiveTextPrimary) },
+                                    leadingIcon = { Icon(Icons.Default.Edit, null, tint = ImmersivePrimary) },
+                                    onClick = {
+                                        showTabOptions = false
+                                        viewModel.openRenameDialog(index)
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Duplicate Tab", color = ImmersiveTextPrimary) },
+                                    leadingIcon = { Icon(Icons.Default.ContentCopy, null, tint = ImmersiveTextSecondary) },
+                                    onClick = {
+                                        showTabOptions = false
+                                        viewModel.duplicateSession(index)
+                                    }
+                                )
+                                if (index > 0) {
+                                    DropdownMenuItem(
+                                        text = { Text("Move Left", color = ImmersiveTextPrimary) },
+                                        leadingIcon = { Icon(Icons.Default.ArrowBack, null, tint = ImmersiveTextSecondary) },
+                                        onClick = {
+                                            showTabOptions = false
+                                            viewModel.moveSession(index, index - 1)
+                                        }
                                     )
                                 }
+                                if (index < sessions.size - 1) {
+                                    DropdownMenuItem(
+                                        text = { Text("Move Right", color = ImmersiveTextPrimary) },
+                                        leadingIcon = { Icon(Icons.Default.ArrowForward, null, tint = ImmersiveTextSecondary) },
+                                        onClick = {
+                                            showTabOptions = false
+                                            viewModel.moveSession(index, index + 1)
+                                        }
+                                    )
+                                }
+                                HorizontalDivider(color = ImmersiveBorderVerySubtle)
+                                DropdownMenuItem(
+                                    text = { Text("Close Tab", color = ImmersiveStatusRed) },
+                                    leadingIcon = { Icon(Icons.Default.Close, null, tint = ImmersiveStatusRed) },
+                                    onClick = {
+                                        showTabOptions = false
+                                        viewModel.closeSession(index)
+                                    }
+                                )
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                // Grid / Session Switcher Button
+                IconButton(
+                    onClick = { viewModel.setSessionSwitcherOpen(true) },
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(ImmersiveComponent)
+                        .border(1.dp, ImmersiveBorderVerySubtle, RoundedCornerShape(10.dp))
+                        .testTag("session_grid_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GridView,
+                        contentDescription = "Session switcher grid",
+                        tint = ImmersiveTextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
 
                 // New Session Add Menu
                 var showAddMenu by remember { mutableStateOf(false) }
@@ -189,16 +386,15 @@ fun TerminalScreen(
                     IconButton(
                         onClick = { showAddMenu = true },
                         modifier = Modifier
-                            .size(34.dp)
+                            .size(32.dp)
                             .clip(RoundedCornerShape(10.dp))
-                            .background(ImmersiveComponent)
-                            .border(1.dp, ImmersiveBorderVerySubtle, RoundedCornerShape(10.dp))
+                            .background(ImmersivePrimary)
                             .testTag("add_session_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = "Add session",
-                            tint = ImmersivePrimary,
+                            tint = ImmersiveOnPrimary,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -422,6 +618,14 @@ fun TerminalScreen(
 
         // Search Bar (if active)
         AnimatedVisibility(visible = isSearching) {
+            val matchingLineIndices = remember(sessionLines, searchQuery, isCaseSensitive) {
+                if (searchQuery.isBlank()) emptyList<Int>()
+                else sessionLines.mapIndexedNotNull { index, line ->
+                    if (line.rawText.contains(searchQuery, ignoreCase = !isCaseSensitive)) index else null
+                }
+            }
+            var currentMatchIdx by remember { mutableIntStateOf(0) }
+
             Surface(
                 color = ImmersiveSurface,
                 modifier = Modifier
@@ -434,12 +638,18 @@ fun TerminalScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 10.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    Icon(Icons.Default.Search, null, tint = ImmersivePrimary, modifier = Modifier.size(16.dp))
+
                     TextField(
                         value = searchQuery,
-                        onValueChange = { viewModel.setSearchQuery(it) },
-                        placeholder = { Text("Search in terminal scrollback...", color = ImmersiveTextMuted, fontSize = 12.sp) },
+                        onValueChange = {
+                            viewModel.setSearchQuery(it)
+                            currentMatchIdx = 0
+                        },
+                        placeholder = { Text("Search terminal scrollback...", color = ImmersiveTextMuted, fontSize = 12.sp) },
                         modifier = Modifier
                             .weight(1f)
                             .height(44.dp),
@@ -461,6 +671,75 @@ fun TerminalScreen(
                             }
                         }
                     )
+
+                    // Case Sensitivity Toggle (Aa)
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isCaseSensitive) ImmersivePrimary else ImmersiveComponent,
+                        modifier = Modifier
+                            .clickable { isCaseSensitive = !isCaseSensitive }
+                            .size(28.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                "Aa",
+                                color = if (isCaseSensitive) ImmersiveOnPrimary else ImmersiveTextSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Match Count Badge
+                    if (searchQuery.isNotBlank()) {
+                        Text(
+                            text = if (matchingLineIndices.isEmpty()) "0" else "${currentMatchIdx + 1}/${matchingLineIndices.size}",
+                            color = if (matchingLineIndices.isEmpty()) ImmersiveStatusRed else ImmersiveStatusGreen,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        // Prev Match Button
+                        IconButton(
+                            onClick = {
+                                if (matchingLineIndices.isNotEmpty()) {
+                                    currentMatchIdx = if (currentMatchIdx > 0) currentMatchIdx - 1 else matchingLineIndices.size - 1
+                                    scope.launch {
+                                        listState.animateScrollToItem(matchingLineIndices[currentMatchIdx])
+                                    }
+                                }
+                            },
+                            enabled = matchingLineIndices.isNotEmpty(),
+                            modifier = Modifier.size(26.dp)
+                        ) {
+                            Icon(Icons.Default.KeyboardArrowUp, "Previous match", tint = ImmersiveTextSecondary, modifier = Modifier.size(16.dp))
+                        }
+
+                        // Next Match Button
+                        IconButton(
+                            onClick = {
+                                if (matchingLineIndices.isNotEmpty()) {
+                                    currentMatchIdx = if (currentMatchIdx < matchingLineIndices.size - 1) currentMatchIdx + 1 else 0
+                                    scope.launch {
+                                        listState.animateScrollToItem(matchingLineIndices[currentMatchIdx])
+                                    }
+                                }
+                            },
+                            enabled = matchingLineIndices.isNotEmpty(),
+                            modifier = Modifier.size(26.dp)
+                        ) {
+                            Icon(Icons.Default.KeyboardArrowDown, "Next match", tint = ImmersiveTextSecondary, modifier = Modifier.size(16.dp))
+                        }
+                    }
+
+                    // Close Search Button
+                    IconButton(
+                        onClick = { viewModel.toggleSearching(false) },
+                        modifier = Modifier.size(26.dp)
+                    ) {
+                        Icon(Icons.Default.Close, "Close search", tint = ImmersiveTextSecondary, modifier = Modifier.size(16.dp))
+                    }
                 }
             }
         }
@@ -846,6 +1125,41 @@ fun TerminalScreen(
                     }
                 }
             }
+        }
+
+        // Rename Session Tab Dialog
+        renameDialogSessionIndex?.let { idx ->
+            val sessionToRename = sessions.getOrNull(idx)
+            if (sessionToRename != null) {
+                RenameSessionDialog(
+                    initialTitle = sessionToRename.title,
+                    onDismiss = { viewModel.closeRenameDialog() },
+                    onConfirm = { newTitle ->
+                        viewModel.renameSession(idx, newTitle)
+                        viewModel.closeRenameDialog()
+                    }
+                )
+            }
+        }
+
+        // Session Switcher Bottom Sheet
+        if (isSessionSwitcherOpen) {
+            SessionSwitcherSheet(
+                viewModel = viewModel,
+                onDismiss = { viewModel.setSessionSwitcherOpen(false) }
+            )
+        }
+
+        // Workspace Management Dialog
+        if (isWorkspaceDialogOpen) {
+            WorkspaceModal(
+                savedHosts = connectionProfiles,
+                onDismiss = { viewModel.closeWorkspaceDialog() },
+                onSave = { name, desc, icon, color, hostIds ->
+                    viewModel.createWorkspace(name, desc, icon, color, hostIds)
+                    viewModel.closeWorkspaceDialog()
+                }
+            )
         }
     }
 }

@@ -20,21 +20,46 @@ data class ShellProfile(
             id = "bash",
             name = "GNU Bash",
             shellPath = "/bin/bash",
-            termType = "xterm-256color"
+            termType = "xterm-256color",
+            envVars = mapOf("SHELL" to "/bin/bash", "TERM" to "xterm-256color")
         )
 
         val ZSH = ShellProfile(
             id = "zsh",
-            name = "Z Shell",
+            name = "Z Shell (zsh)",
             shellPath = "/bin/zsh",
-            termType = "xterm-256color"
+            termType = "xterm-256color",
+            envVars = mapOf("SHELL" to "/bin/zsh", "TERM" to "xterm-256color")
+        )
+
+        val FISH = ShellProfile(
+            id = "fish",
+            name = "Fish Shell",
+            shellPath = "/usr/bin/fish",
+            termType = "xterm-256color",
+            envVars = mapOf("SHELL" to "/usr/bin/fish", "TERM" to "xterm-256color")
         )
 
         val SH = ShellProfile(
             id = "sh",
-            name = "POSIX Shell",
+            name = "POSIX Shell (sh)",
             shellPath = "/bin/sh",
-            termType = "xterm-256color"
+            termType = "xterm-256color",
+            envVars = mapOf("SHELL" to "/bin/sh", "TERM" to "xterm-256color")
         )
+
+        val PYTHON = ShellProfile(
+            id = "python",
+            name = "Python 3 REPL",
+            shellPath = "/usr/bin/python3",
+            termType = "xterm-256color",
+            envVars = mapOf("PYTHONUNBUFFERED" to "1")
+        )
+
+        val ALL_PRESETS = listOf(DEFAULT, BASH, ZSH, FISH, SH, PYTHON)
+
+        fun getProfileById(id: String): ShellProfile {
+            return ALL_PRESETS.firstOrNull { it.id.equals(id, ignoreCase = true) } ?: DEFAULT
+        }
     }
 }
