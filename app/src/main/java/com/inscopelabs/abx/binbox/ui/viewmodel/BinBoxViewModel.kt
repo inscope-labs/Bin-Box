@@ -8,7 +8,12 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.inscopelabs.abx.binbox.core.diagnostics.DeviceDiagnostics
+import com.inscopelabs.abx.binbox.core.diagnostics.SessionMetrics
+import com.inscopelabs.abx.binbox.core.diagnostics.SessionTelemetryTracker
+import com.inscopelabs.abx.binbox.core.diagnostics.SystemDiagnosticsCollector
 import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
+import com.inscopelabs.abx.binbox.core.logging.LogEntry
 import com.inscopelabs.abx.binbox.core.result.AppResult
 import com.inscopelabs.abx.binbox.data.database.AppDatabase
 import com.inscopelabs.abx.binbox.data.entity.HistoryEntity
@@ -241,7 +246,23 @@ class BinBoxViewModel(
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
+    // ----------------------------------------------------
+    // System Diagnostics, Telemetry & Logging Engine
+    // ----------------------------------------------------
+    private val diagnosticsCollector = SystemDiagnosticsCollector(application)
+    val sessionTelemetryTracker = SessionTelemetryTracker()
+
+    private val _systemDiagnostics = MutableStateFlow<DeviceDiagnostics?>(null)
+    val systemDiagnostics: StateFlow<DeviceDiagnostics?> = _systemDiagnostics.asStateFlow()
+
+    val sessionMetrics: StateFlow<Map<String, SessionMetrics>> = sessionTelemetryTracker.telemetryFlow
+
+    private val _logEntries = MutableStateFlow<List<LogEntry>>(emptyList())
+    val logEntries: StateFlow<List<LogEntry>> = _logEntries.asStateFlow()
+
     init {
+        refreshSystemDiagnostics()
+        refreshLogs()
         // Auto-launch demo session on initial launch if none open
         viewModelScope.launch {
             kotlinx.coroutines.delay(300)
@@ -634,5 +655,25 @@ class BinBoxViewModel(
         } catch (_: Throwable) {
             // Ignore
         }
+    }
+
+    // ----------------------------------------------------
+    // Diagnostics & Log Management
+    // ----------------------------------------------------
+    fun refreshSystemDiagnostics() {
+        try {
+            _systemDiagnostics.value = diagnosticsCollector.collectSnapshot()
+        } catch (e: Throwable) {
+            BinBoxLogger.w("BinBoxViewModel", "Failed refreshing diagnostics", e)
+        }
+    }
+
+    fun refreshLogs() {
+        _logEntries.value = BinBoxLogger.getLogs()
+    }
+
+    fun clearLogs() {
+        BinBoxLogger.clear()
+        _logEntries.value = emptyList()
     }
 }
