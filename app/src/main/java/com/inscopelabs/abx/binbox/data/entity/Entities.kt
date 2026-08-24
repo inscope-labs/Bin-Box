@@ -1,6 +1,7 @@
 package com.inscopelabs.abx.binbox.data.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "hosts")
@@ -52,4 +53,19 @@ data class HistoryEntity(
     val command: String,
     val hostLabel: String,
     val timestamp: Long = System.currentTimeMillis()
+)
+
+/**
+ * Trust-on-first-use SSH host-key store (Phase 5/9). Only a fingerprint is
+ * kept, not the raw key — sufficient to detect a changed key on a later
+ * connection, which is the property this table exists to provide.
+ */
+@Entity(tableName = "known_host_keys", indices = [Index(value = ["host", "port"], unique = true)])
+data class KnownHostKeyEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val host: String,
+    val port: Int,
+    val keyType: String,
+    val fingerprint: String,
+    val firstSeenAt: Long = System.currentTimeMillis()
 )

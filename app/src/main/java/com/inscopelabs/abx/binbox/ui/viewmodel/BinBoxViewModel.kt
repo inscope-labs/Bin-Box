@@ -120,6 +120,7 @@ class BinBoxViewModel(
             val snippetRepo = SnippetRepositoryImpl(db.snippetDao())
             val historyRepo = HistoryRepositoryImpl(db.historyDao())
             val sessionRepo = SessionRepositoryImpl()
+            val hostKeyStore = com.inscopelabs.abx.binbox.security.HostKeyStore(db.knownHostKeyDao())
 
             val hostUseCases = HostUseCases.create(hostRepo)
             val keyUseCases = KeyUseCases.create(keyRepo)
@@ -127,7 +128,7 @@ class BinBoxViewModel(
             val historyUseCases = HistoryUseCases.create(historyRepo)
             val manageSessionUseCase = ManageSessionUseCase(sessionRepo)
 
-            val sessionFactory = TerminalSessionFactory(keyRepository = keyRepo)
+            val sessionFactory = TerminalSessionFactory(keyRepository = keyRepo, hostKeyStore = hostKeyStore)
             val sessionManager = TerminalSessionManager(
                 sessionFactory = sessionFactory,
                 sessionRepository = sessionRepo

@@ -163,4 +163,65 @@ class DiagnosticsAndSecurityTest {
         assertEquals(null, com.inscopelabs.abx.binbox.security.CredentialCrypto.decryptField(storage, null))
         assertEquals("", com.inscopelabs.abx.binbox.security.CredentialCrypto.encryptField(storage, ""))
     }
+
+    @Test
+    fun testHostKeyStore_trustOnFirstUse_thenAcceptsMatchingKey() {
+        val db = androidx.room.Room.inMemoryDatabaseBuilder(
+            app, com.inscopelabs.abx.binbox.data.database.AppDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val store = com.inscopelabs.abx.binbox.security.HostKeyStore(db.knownHostKeyDao())
+        val fakeKey = "ssh-ed25519-fake-key-bytes-for-test".toByteArray(Charsets.UTF_8)
+
+        // First contact: no stored key yet — trusted and remembered.
+        val firstResult = store.check("example.binbox.test", fakeKey)
+        assertEquals(com.jcraft.jsch.HostKeyRepository.OK, firstResult)
+
+        // Same key again: matches what was stored — still OK.
+        val secondResult = store.check("example.binbox.test", fakeKey)
+        assertEquals(com.jcraft.jsch.HostKeyRepository.OK, secondResult)
+
+        db.close()
+    }
+
+    @Test
+    fun testHostKeyStore_rejectsChangedKey() {
+        val db = androidx.room.Room.inMemoryDatabaseBuilder(
+            app, com.inscopelabs.abx.binbox.data.database.AppDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val store = com.inscopelabs.abx.binbox.security.HostKeyStore(db.knownHostKeyDao())
+        val originalKey = "ssh-ed25519-original-key-bytes".toByteArray(Charsets.UTF_8)
+        val rotatedKey = "ssh-ed25519-a-totally-different-key".toByteArray(Charsets.UTF_8)
+
+        assertEquals(com.jcraft.jsch.HostKeyRepository.OK, store.check("pi.homelab.test", originalKey))
+
+        // A different key presented for the same host — must be rejected, not silently trusted.
+        val mismatchResult = store.check("pi.homelab.test", rotatedKey)
+        assertEquals(com.jcraft.jsch.HostKeyRepository.CHANGED, mismatchResult)
+
+        db.close()
+    }
+
+    @Test
+    fun testHostKeyStore_bracketedHostPortIsParsedCorrectly() {
+        val db = androidx.room.Room.inMemoryDatabaseBuilder(
+            app, com.inscopelabs.abx.binbox.data.database.AppDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val store = com.inscopelabs.abx.binbox.security.HostKeyStore(db.knownHostKeyDao())
+        val key = "ssh-rsa-fake-key-bytes".toByteArray(Charsets.UTF_8)
+
+        // JSch formats non-default-port hosts as "[host]:port".
+        assertEquals(com.jcraft.jsch.HostKeyRepository.OK, store.check("[pi.homelab.test]:2222", key))
+
+        val stored = db.knownHostKeyDao().findByHostPortBlocking("pi.homelab.test", 2222)
+        assertNotNull(stored)
+        assertEquals(2222, stored?.port)
+
+        // A different port on the same host is a distinct trust record, not the same one.
+        val differentPortResult = store.check("pi.homelab.test", key)
+        assertEquals(com.jcraft.jsch.HostKeyRepository.OK, differentPortResult)
+        val storedDefaultPort = db.knownHostKeyDao().findByHostPortBlocking("pi.homelab.test", 22)
+        assertNotNull(storedDefaultPort)
+
+        db.close()
+    }
 }

@@ -4,6 +4,7 @@ import androidx.room.*
 import com.inscopelabs.abx.binbox.data.entity.HistoryEntity
 import com.inscopelabs.abx.binbox.data.entity.HostEntity
 import com.inscopelabs.abx.binbox.data.entity.KeyEntity
+import com.inscopelabs.abx.binbox.data.entity.KnownHostKeyEntity
 import com.inscopelabs.abx.binbox.data.entity.SnippetEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -77,4 +78,25 @@ interface HistoryDao {
 
     @Query("DELETE FROM command_history")
     suspend fun clearHistory()
+}
+
+/**
+ * Deliberately non-suspend: JSch's HostKeyRepository interface is called
+ * synchronously mid-handshake (inside session.connect()), which itself
+ * already runs on a background dispatcher in SshTransport — blocking here
+ * is correct, not an oversight.
+ */
+@Dao
+interface KnownHostKeyDao {
+    @Query("SELECT * FROM known_host_keys WHERE host = :host AND port = :port LIMIT 1")
+    fun findByHostPortBlocking(host: String, port: Int): KnownHostKeyEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertBlocking(entity: KnownHostKeyEntity): Long
+
+    @Query("DELETE FROM known_host_keys WHERE host = :host AND port = :port")
+    fun deleteByHostPortBlocking(host: String, port: Int)
+
+    @Query("SELECT * FROM known_host_keys ORDER BY firstSeenAt DESC")
+    fun getAllBlocking(): List<KnownHostKeyEntity>
 }

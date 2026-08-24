@@ -13,6 +13,7 @@ import com.inscopelabs.abx.binbox.terminal.model.TerminalThemes
 
 class TerminalSessionFactory(
     private val keyRepository: IKeyRepository? = null,
+    private val hostKeyStore: com.jcraft.jsch.HostKeyRepository? = null,
     private val onBell: (() -> Unit)? = null
 ) {
 
@@ -78,6 +79,7 @@ class TerminalSessionFactory(
                         password = profile.password,
                         privateKey = privateKeyContent,
                         privateKeyPassphrase = profile.keyPassphrase,
+                        hostKeyRepository = hostKeyStore,
                         initialTheme = theme,
                         onBell = onBell
                     )

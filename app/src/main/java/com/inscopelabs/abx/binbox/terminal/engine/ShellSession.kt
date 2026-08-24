@@ -177,6 +177,7 @@ class SshShellSession(
     password: String? = null,
     privateKey: String? = null,
     privateKeyPassphrase: String? = null,
+    hostKeyRepository: com.jcraft.jsch.HostKeyRepository? = null,
     initialTheme: TerminalThemePreset,
     onBell: (() -> Unit)? = null
 ) : TransportShellSession(
@@ -189,7 +190,8 @@ class SshShellSession(
         username = username,
         password = password,
         privateKey = privateKey,
-        privateKeyPassphrase = privateKeyPassphrase
+        privateKeyPassphrase = privateKeyPassphrase,
+        hostKeyRepository = hostKeyRepository
     ),
     initialTheme = initialTheme,
     onBell = onBell,

@@ -23,14 +23,17 @@ import java.util.Properties
  * above [ITransport] (ShellSession, TerminalSessionManager, UI) references
  * JSch types directly.
  *
- * This is a direct extraction of the connection logic that previously lived
- * inline inside SshShellSession; behavior is intentionally unchanged
- * (StrictHostKeyChecking=no, same auth precedence, same PTY defaults) so this
- * refactor is a pure architectural move, not a functional one.
+ * Host-key verification is delegated to an optional [HostKeyRepository]
+ * (in practice, [com.inscopelabs.abx.binbox.security.HostKeyStore]'s TOFU
+ * implementation). When one is supplied, StrictHostKeyChecking is enabled
+ * so a rejected/changed key hard-fails the connection rather than only
+ * logging a warning. When none is supplied (e.g. call sites that haven't
+ * been updated yet, or tests), the previous permissive behavior is kept,
+ * but loudly logged rather than silently left in place.
  *
- * Host-key verification, keepalive, and reconnection (also called out in the
- * upgrade plan's Phase 5 deliverables) are not yet implemented — tracked as
- * follow-up, not silently dropped.
+ * Keepalive and reconnection (also called out in the upgrade plan's Phase 5
+ * deliverables) are not yet implemented — tracked as follow-up, not
+ * silently dropped.
  */
 class SshTransport(
     private val host: String,
@@ -42,6 +45,7 @@ class SshTransport(
     private val ptyType: String = "xterm-256color",
     private val sessionConnectTimeoutMs: Int = 15000,
     private val channelConnectTimeoutMs: Int = 10000,
+    private val hostKeyRepository: com.jcraft.jsch.HostKeyRepository? = null,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 ) : ITransport {
 
@@ -84,7 +88,16 @@ class SshTransport(
             }
 
             val config = Properties()
-            config["StrictHostKeyChecking"] = "no"
+            if (hostKeyRepository != null) {
+                session.setHostKeyRepository(hostKeyRepository)
+                config["StrictHostKeyChecking"] = "yes"
+            } else {
+                BinBoxLogger.w(
+                    "SshTransport",
+                    "No HostKeyStore supplied — host-key verification is DISABLED for this connection ($host:$port)"
+                )
+                config["StrictHostKeyChecking"] = "no"
+            }
             config["PreferredAuthentications"] = "publickey,password,keyboard-interactive"
             session.setConfig(config)
             session.timeout = sessionConnectTimeoutMs
