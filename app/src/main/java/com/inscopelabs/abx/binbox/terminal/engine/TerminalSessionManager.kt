@@ -148,6 +148,18 @@ class TerminalSessionManager(
         activeSession?.clear()
     }
 
+    fun resetActiveTerminal() {
+        activeSession?.reset()
+    }
+
+    fun searchActiveTerminal(query: String, ignoreCase: Boolean = true): com.inscopelabs.abx.binbox.terminal.model.TerminalSearchResults {
+        return activeSession?.search(query, ignoreCase) ?: com.inscopelabs.abx.binbox.terminal.model.TerminalSearchResults(query)
+    }
+
+    fun sendFunctionKeyToActive(fIndex: Int) {
+        activeSession?.sendFunctionKey(fIndex)
+    }
+
     fun resizeActiveTerminal(cols: Int, rows: Int, widthPx: Int = 0, heightPx: Int = 0) {
         activeSession?.let { session ->
             session.resize(cols, rows, widthPx, heightPx)

@@ -1,19 +1,41 @@
 package com.inscopelabs.abx.binbox.terminal.engine
 
 import androidx.compose.ui.graphics.Color
-import com.inscopelabs.abx.binbox.terminal.model.StyledSegment
-import com.inscopelabs.abx.binbox.terminal.model.TerminalLine
-import com.inscopelabs.abx.binbox.terminal.model.TerminalStyle
-import com.inscopelabs.abx.binbox.terminal.model.TerminalThemePreset
+import com.inscopelabs.abx.binbox.terminal.model.*
 
 class AnsiParser(
     private var theme: TerminalThemePreset,
-    private val onBell: (() -> Unit)? = null
+    private val onBell: (() -> Unit)? = null,
+    private val onTitleChange: ((String) -> Unit)? = null
 ) {
     private var currentStyle = TerminalStyle()
-    private val buffer = mutableListOf<TerminalLine>()
+    
+    // Primary buffer
+    private val primaryBuffer = mutableListOf<TerminalLine>()
+    // Alternate screen buffer (e.g. for vim, htop, nano)
+    private val alternateBuffer = mutableListOf<TerminalLine>()
+    private var isAlternateBufferActive = false
+
+    private val currentBuffer: MutableList<TerminalLine>
+        get() = if (isAlternateBufferActive) alternateBuffer else primaryBuffer
+
     private var currentLineSegments = mutableListOf<StyledSegment>()
     private var currentSegmentBuilder = StringBuilder()
+
+    // Cursor position & visibility
+    var cursorRow: Int = 0
+        private set
+    var cursorCol: Int = 0
+        private set
+    var isCursorVisible: Boolean = true
+        private set
+    var isBracketedPasteMode: Boolean = false
+        private set
+
+    // Saved cursor state (DECSC / DECRC)
+    private var savedCursorRow = 0
+    private var savedCursorCol = 0
+    private var savedStyle = TerminalStyle()
 
     var maxScrollback: Int = 3000
 
@@ -23,8 +45,9 @@ class AnsiParser(
 
     @Synchronized
     fun getLines(): List<TerminalLine> {
-        val result = ArrayList<TerminalLine>(buffer.size + 1)
-        result.addAll(buffer)
+        val activeBuf = currentBuffer
+        val result = ArrayList<TerminalLine>(activeBuf.size + 1)
+        result.addAll(activeBuf)
         if (currentSegmentBuilder.isNotEmpty() || currentLineSegments.isNotEmpty()) {
             val pendingSegments = ArrayList(currentLineSegments)
             if (currentSegmentBuilder.isNotEmpty()) {
@@ -37,10 +60,60 @@ class AnsiParser(
 
     @Synchronized
     fun clear() {
-        buffer.clear()
+        primaryBuffer.clear()
+        alternateBuffer.clear()
         currentLineSegments.clear()
         currentSegmentBuilder.clear()
         currentStyle = TerminalStyle()
+        cursorRow = 0
+        cursorCol = 0
+    }
+
+    @Synchronized
+    fun reset() {
+        clear()
+        isAlternateBufferActive = false
+        isCursorVisible = true
+        isBracketedPasteMode = false
+        savedCursorRow = 0
+        savedCursorCol = 0
+        savedStyle = TerminalStyle()
+    }
+
+    @Synchronized
+    fun search(query: String, ignoreCase: Boolean = true): TerminalSearchResults {
+        if (query.isBlank()) return TerminalSearchResults(query = query)
+        val allLines = getLines()
+        val matches = mutableListOf<SearchMatch>()
+
+        for ((lineIdx, line) in allLines.withIndex()) {
+            val lineText = line.rawText
+            var startIndex = 0
+            while (startIndex < lineText.length) {
+                val matchIndex = lineText.indexOf(query, startIndex, ignoreCase = ignoreCase)
+                if (matchIndex == -1) break
+                val endOffset = matchIndex + query.length
+                matches.add(
+                    SearchMatch(
+                        lineIndex = lineIdx,
+                        startOffset = matchIndex,
+                        endOffset = endOffset,
+                        text = lineText.substring(matchIndex, endOffset)
+                    )
+                )
+                startIndex = matchIndex + 1
+            }
+        }
+        return TerminalSearchResults(
+            query = query,
+            matches = matches,
+            currentMatchIndex = if (matches.isNotEmpty()) 0 else 0
+        )
+    }
+
+    @Synchronized
+    fun exportPlainText(): String {
+        return getLines().joinToString("\n") { it.rawText }
     }
 
     @Synchronized
@@ -52,39 +125,40 @@ class AnsiParser(
             val ch = input[i]
 
             when {
-                // Bell character
+                // Bell character (\a)
                 ch == '\u0007' -> {
                     onBell?.invoke()
                     i++
                 }
 
-                // Carriage Return
+                // Carriage Return (\r)
                 ch == '\r' -> {
-                    // Check if followed by newline
                     if (i + 1 < len && input[i + 1] == '\n') {
                         flushCurrentSegment()
                         commitCurrentLine()
                         i += 2
                     } else {
-                        // CR without LF: overwrite from start of line
+                        // CR without LF: move cursor back to beginning of line (overwrites line)
                         flushCurrentSegment()
                         currentLineSegments.clear()
                         currentSegmentBuilder.clear()
+                        cursorCol = 0
                         i++
                     }
                 }
 
-                // Newline
+                // Newline (\n)
                 ch == '\n' -> {
                     flushCurrentSegment()
                     commitCurrentLine()
                     i++
                 }
 
-                // Backspace
+                // Backspace (\b)
                 ch == '\b' -> {
                     if (currentSegmentBuilder.isNotEmpty()) {
                         currentSegmentBuilder.deleteCharAt(currentSegmentBuilder.length - 1)
+                        if (cursorCol > 0) cursorCol--
                     } else if (currentLineSegments.isNotEmpty()) {
                         val last = currentLineSegments.removeAt(currentLineSegments.lastIndex)
                         if (last.text.length > 1) {
@@ -92,52 +166,81 @@ class AnsiParser(
                                 last.copy(text = last.text.substring(0, last.text.length - 1))
                             )
                         }
+                        if (cursorCol > 0) cursorCol--
                     }
                     i++
                 }
 
-                // Tab
+                // Tab (\t)
                 ch == '\t' -> {
-                    currentSegmentBuilder.append("    ")
+                    val tabSpaces = 4 - (cursorCol % 4)
+                    currentSegmentBuilder.append(" ".repeat(tabSpaces.coerceAtLeast(1)))
+                    cursorCol += tabSpaces
                     i++
                 }
 
-                // ANSI Escape sequence start \u001b
+                // ANSI Escape sequence start (\u001b)
                 ch == '\u001B' -> {
                     if (i + 1 < len) {
                         val next = input[i + 1]
-                        if (next == '[') {
-                            // CSI sequence: parse till terminating letter
-                            var endIdx = i + 2
-                            while (endIdx < len && !isCsiTerminator(input[endIdx])) {
-                                endIdx++
-                            }
+                        when (next) {
+                            '[' -> {
+                                // CSI sequence: parse till terminating character
+                                var endIdx = i + 2
+                                while (endIdx < len && !isCsiTerminator(input[endIdx])) {
+                                    endIdx++
+                                }
 
-                            if (endIdx < len) {
-                                val csiCode = input.substring(i + 2, endIdx)
-                                val command = input[endIdx]
-                                handleCsi(csiCode, command)
-                                i = endIdx + 1
-                            } else {
-                                // Incomplete sequence at end of chunk, skip
-                                i = len
+                                if (endIdx < len) {
+                                    val csiCode = input.substring(i + 2, endIdx)
+                                    val command = input[endIdx]
+                                    handleCsi(csiCode, command)
+                                    i = endIdx + 1
+                                } else {
+                                    i = len
+                                }
                             }
-                        } else if (next == ']') {
-                            // OSC sequence: \u001b] ... \u0007 or \u001b\
-                            var endIdx = i + 2
-                            while (endIdx < len && input[endIdx] != '\u0007' && input[endIdx] != '\u001B') {
-                                endIdx++
+                            ']' -> {
+                                // OSC sequence: \u001b] ... \u0007 or \u001b\
+                                var endIdx = i + 2
+                                while (endIdx < len && input[endIdx] != '\u0007' && input[endIdx] != '\u001B') {
+                                    endIdx++
+                                }
+                                if (endIdx < len && input[endIdx] == '\u001B' && endIdx + 1 < len && input[endIdx + 1] == '\\') {
+                                    val oscContent = input.substring(i + 2, endIdx)
+                                    handleOsc(oscContent)
+                                    i = endIdx + 2
+                                } else if (endIdx < len && input[endIdx] == '\u0007') {
+                                    val oscContent = input.substring(i + 2, endIdx)
+                                    handleOsc(oscContent)
+                                    i = endIdx + 1
+                                } else {
+                                    i = len
+                                }
                             }
-                            if (endIdx < len && input[endIdx] == '\u001B' && endIdx + 1 < len && input[endIdx + 1] == '\\') {
-                                i = endIdx + 2
-                            } else if (endIdx < len && input[endIdx] == '\u0007') {
-                                i = endIdx + 1
-                            } else {
-                                i = len
+                            '7' -> {
+                                // Save cursor state (DECSC)
+                                savedCursorRow = cursorRow
+                                savedCursorCol = cursorCol
+                                savedStyle = currentStyle
+                                i += 2
                             }
-                        } else {
-                            // Single-character escape
-                            i += 2
+                            '8' -> {
+                                // Restore cursor state (DECRC)
+                                cursorRow = savedCursorRow
+                                cursorCol = savedCursorCol
+                                currentStyle = savedStyle
+                                i += 2
+                            }
+                            'c' -> {
+                                // Full reset (RIS)
+                                reset()
+                                i += 2
+                            }
+                            else -> {
+                                // Unrecognized single char escape
+                                i += 2
+                            }
                         }
                     } else {
                         i++
@@ -146,22 +249,35 @@ class AnsiParser(
 
                 else -> {
                     currentSegmentBuilder.append(ch)
+                    cursorCol++
                     i++
                 }
             }
         }
 
-        // Limit scrollback buffer
-        if (buffer.size > maxScrollback) {
-            val toRemove = buffer.size - maxScrollback
+        // Limit scrollback buffer in non-alternate mode
+        if (!isAlternateBufferActive && primaryBuffer.size > maxScrollback) {
+            val toRemove = primaryBuffer.size - maxScrollback
             repeat(toRemove) {
-                if (buffer.isNotEmpty()) buffer.removeAt(0)
+                if (primaryBuffer.isNotEmpty()) primaryBuffer.removeAt(0)
             }
         }
     }
 
     private fun isCsiTerminator(c: Char): Boolean {
         return c in '@'..'~'
+    }
+
+    private fun handleOsc(content: String) {
+        // OSC commands: "0;Title", "2;Title", etc.
+        val parts = content.split(';', limit = 2)
+        if (parts.size == 2) {
+            val code = parts[0]
+            val value = parts[1]
+            if (code == "0" || code == "2") {
+                onTitleChange?.invoke(value)
+            }
+        }
     }
 
     private fun handleCsi(paramsStr: String, command: Char) {
@@ -172,26 +288,106 @@ class AnsiParser(
                 parseSgr(paramsStr)
             }
             'J' -> {
-                // Erase in Display: 2J or 3J clears screen/buffer
-                if (paramsStr == "2" || paramsStr == "3" || paramsStr == "") {
-                    buffer.clear()
-                    currentLineSegments.clear()
-                    currentSegmentBuilder.clear()
+                // Erase in Display
+                flushCurrentSegment()
+                when (paramsStr) {
+                    "2", "3" -> {
+                        currentBuffer.clear()
+                        currentLineSegments.clear()
+                        currentSegmentBuilder.clear()
+                        cursorRow = 0
+                        cursorCol = 0
+                    }
+                    "1" -> {
+                        // Clear from beginning to cursor
+                        currentSegmentBuilder.clear()
+                        currentLineSegments.clear()
+                    }
+                    "0", "" -> {
+                        // Clear from cursor to end
+                        currentSegmentBuilder.clear()
+                    }
                 }
             }
             'K' -> {
-                // Erase in Line: 2K clears line
-                if (paramsStr == "2" || paramsStr == "") {
-                    currentSegmentBuilder.clear()
-                    currentLineSegments.clear()
+                // Erase in Line
+                when (paramsStr) {
+                    "2" -> {
+                        currentSegmentBuilder.clear()
+                        currentLineSegments.clear()
+                        cursorCol = 0
+                    }
+                    "1" -> {
+                        // Clear line left of cursor
+                        currentSegmentBuilder.clear()
+                    }
+                    "0", "" -> {
+                        // Clear line right of cursor
+                        currentSegmentBuilder.clear()
+                    }
                 }
             }
             'H', 'f' -> {
-                // Cursor Home / Position: for now flush and allow text rendering
+                // Cursor Home / Position: CUP \e[row;colH (1-indexed)
                 flushCurrentSegment()
+                val parts = paramsStr.split(';').mapNotNull { it.toIntOrNull() }
+                cursorRow = if (parts.isNotEmpty()) (parts[0] - 1).coerceAtLeast(0) else 0
+                cursorCol = if (parts.size > 1) (parts[1] - 1).coerceAtLeast(0) else 0
+            }
+            'A' -> {
+                // Cursor Up
+                val count = paramsStr.toIntOrNull() ?: 1
+                cursorRow = (cursorRow - count).coerceAtLeast(0)
+            }
+            'B' -> {
+                // Cursor Down
+                val count = paramsStr.toIntOrNull() ?: 1
+                cursorRow += count
+            }
+            'C' -> {
+                // Cursor Forward
+                val count = paramsStr.toIntOrNull() ?: 1
+                cursorCol += count
+            }
+            'D' -> {
+                // Cursor Backward
+                val count = paramsStr.toIntOrNull() ?: 1
+                cursorCol = (cursorCol - count).coerceAtLeast(0)
+            }
+            'h', 'l' -> {
+                val isEnable = (command == 'h')
+                if (paramsStr.startsWith("?")) {
+                    val mode = paramsStr.removePrefix("?").toIntOrNull()
+                    when (mode) {
+                        25 -> isCursorVisible = isEnable // DECTCEM Show/Hide Cursor
+                        47, 1049 -> {
+                            // Alternate screen buffer
+                            if (isEnable && !isAlternateBufferActive) {
+                                isAlternateBufferActive = true
+                                alternateBuffer.clear()
+                            } else if (!isEnable && isAlternateBufferActive) {
+                                isAlternateBufferActive = false
+                                alternateBuffer.clear()
+                            }
+                        }
+                        2004 -> isBracketedPasteMode = isEnable // Bracketed paste mode
+                    }
+                }
+            }
+            's' -> {
+                // Save cursor position
+                savedCursorRow = cursorRow
+                savedCursorCol = cursorCol
+                savedStyle = currentStyle
+            }
+            'u' -> {
+                // Restore cursor position
+                cursorRow = savedCursorRow
+                cursorCol = savedCursorCol
+                currentStyle = savedStyle
             }
             else -> {
-                // Other cursor/mode controls (ignore or flush)
+                // Other sequences flush segment safely
                 flushCurrentSegment()
             }
         }
@@ -220,6 +416,7 @@ class AnsiParser(
                 4 -> currentStyle = currentStyle.copy(isUnderline = true)
                 7 -> currentStyle = currentStyle.copy(isInverted = true)
                 9 -> currentStyle = currentStyle.copy(isStrikethrough = true)
+                21 -> currentStyle = currentStyle.copy(isUnderline = true) // Double underline
                 22 -> currentStyle = currentStyle.copy(isBold = false, isDim = false)
                 23 -> currentStyle = currentStyle.copy(isItalic = false)
                 24 -> currentStyle = currentStyle.copy(isUnderline = false)
@@ -319,7 +516,9 @@ class AnsiParser(
     }
 
     private fun commitCurrentLine() {
-        buffer.add(TerminalLine(ArrayList(currentLineSegments)))
+        currentBuffer.add(TerminalLine(ArrayList(currentLineSegments)))
         currentLineSegments.clear()
+        cursorRow++
+        cursorCol = 0
     }
 }

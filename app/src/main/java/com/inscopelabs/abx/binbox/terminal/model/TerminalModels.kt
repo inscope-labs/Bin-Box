@@ -2,6 +2,7 @@ package com.inscopelabs.abx.binbox.terminal.model
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -259,11 +260,84 @@ object TerminalThemes {
     )
     val Gruvbox = GruvboxDark
 
+    val SolarizedLight = TerminalThemePreset(
+        id = "solarized_light",
+        name = "Solarized Light",
+        backgroundColor = Color(0xFFFDF6E3),
+        foregroundColor = Color(0xFF657B83),
+        cursorColor = Color(0xFF268BD2),
+        selectionColor = Color(0x33073642),
+        ansiPalette = listOf(
+            Color(0xFFEEE8D5), Color(0xFFDC322F), Color(0xFF859900), Color(0xFFB58900),
+            Color(0xFF268BD2), Color(0xFFD33682), Color(0xFF2AA198), Color(0xFF073642),
+            Color(0xFF93A1A1), Color(0xFFCB4B16), Color(0xFF586E75), Color(0xFF657B83),
+            Color(0xFF839496), Color(0xFF6C71C4), Color(0xFF93A1A1), Color(0xFF002B36)
+        )
+    )
+
+    val PureOled = TerminalThemePreset(
+        id = "pure_oled",
+        name = "Pure OLED (Black)",
+        backgroundColor = Color(0xFF000000),
+        foregroundColor = Color(0xFFEEEEEE),
+        cursorColor = Color(0xFF00F0FF),
+        selectionColor = Color(0x66333333),
+        ansiPalette = listOf(
+            Color(0xFF000000), Color(0xFFFF5555), Color(0xFF55FF55), Color(0xFFFFFF55),
+            Color(0xFF5555FF), Color(0xFFFF55FF), Color(0xFF55FFFF), Color(0xFFFFFFFF),
+            Color(0xFF555555), Color(0xFFFF7777), Color(0xFF77FF77), Color(0xFFFFFF77),
+            Color(0xFF7777FF), Color(0xFFFF77FF), Color(0xFF77FFFF), Color(0xFFFFFFFF)
+        )
+    )
+
     val AllThemes = listOf(
-        MonokaiPro, Dracula, Nord, Cyberpunk, MatrixGreen, AmberCrt, SolarizedDark, OneDark, TokyoNight, GruvboxDark
+        MonokaiPro, Dracula, Nord, Cyberpunk, MatrixGreen, AmberCrt, SolarizedDark, SolarizedLight, OneDark, TokyoNight, GruvboxDark, PureOled
     )
 
     fun getThemeById(id: String): TerminalThemePreset {
         return AllThemes.find { it.id == id } ?: MonokaiPro
     }
 }
+
+data class CursorPosition(
+    val row: Int = 0,
+    val col: Int = 0,
+    val visible: Boolean = true,
+    val style: CursorStyle = CursorStyle.BLOCK
+)
+
+data class TerminalDimension(
+    val cols: Int = 80,
+    val rows: Int = 24,
+    val widthPx: Int = 0,
+    val heightPx: Int = 0
+)
+
+data class SearchMatch(
+    val lineIndex: Int,
+    val startOffset: Int,
+    val endOffset: Int,
+    val text: String
+)
+
+data class TerminalSearchResults(
+    val query: String = "",
+    val matches: List<SearchMatch> = emptyList(),
+    val currentMatchIndex: Int = 0
+) {
+    val totalMatches: Int get() = matches.size
+    val currentMatch: SearchMatch? get() = matches.getOrNull(currentMatchIndex)
+}
+
+enum class TerminalFontFamily(val label: String, val fontFamily: FontFamily) {
+    MONOSPACE("Monospace (System Default)", FontFamily.Monospace),
+    DEFAULT("Sans Serif", FontFamily.Default),
+    SERIF("Serif Display", FontFamily.Serif)
+}
+
+data class TerminalFontConfig(
+    val fontFamily: TerminalFontFamily = TerminalFontFamily.MONOSPACE,
+    val fontSizeSp: Float = 12f,
+    val lineHeightSp: Float = 16f,
+    val letterSpacingSp: Float = 0f
+)
