@@ -1,0 +1,168 @@
+package com.inscopelabs.abx.binbox.transport
+
+import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
+import com.inscopelabs.abx.binbox.terminal.model.SessionState
+import com.inscopelabs.abx.binbox.transport.local.TermuxDiscovery
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+
+/**
+ * Local process transport (Phase 4 — Local Android/Termux Shell Provider).
+ *
+ * Runs a local shell process (Termux bash/zsh or Android system /system/bin/sh)
+ * via [ProcessBuilder] and provides asynchronous I/O bridge to the terminal engine.
+ */
+class LocalProcessTransport(
+    private val command: List<String>? = null,
+    private val workingDir: File? = null,
+    private val environment: Map<String, String>? = null,
+    private val preferTermux: Boolean = true,
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+) : ITransport {
+
+    private val _state = MutableStateFlow<SessionState>(SessionState.Disconnected)
+    override val state: StateFlow<SessionState> = _state.asStateFlow()
+
+    private val _bytesReceived = MutableStateFlow(0L)
+    override val bytesReceived: StateFlow<Long> = _bytesReceived.asStateFlow()
+
+    private val _bytesSent = MutableStateFlow(0L)
+    override val bytesSent: StateFlow<Long> = _bytesSent.asStateFlow()
+
+    private var listener: TransportListener? = null
+
+    private var process: Process? = null
+    private var outputStream: OutputStream? = null
+    private var inputStream: InputStream? = null
+
+    var detectedEnvironment: TermuxDiscovery.LocalShellEnvironment? = null
+        private set
+
+    override fun setListener(listener: TransportListener) {
+        this.listener = listener
+    }
+
+    override suspend fun connect() {
+        if (_state.value == SessionState.Connected || _state.value == SessionState.Connecting) return
+        _state.value = SessionState.Connecting
+
+        try {
+            val envInfo = TermuxDiscovery.detectBestShell(preferTermux)
+            detectedEnvironment = envInfo
+
+            val cmd = command ?: listOf(envInfo.shellPath)
+            val pb = ProcessBuilder(cmd)
+
+            // Setup working directory
+            val workDir = workingDir ?: envInfo.workingDir
+            if (workDir != null && workDir.exists() && workDir.isDirectory) {
+                pb.directory(workDir)
+            }
+
+            // Setup environment variables
+            val pbEnv = pb.environment()
+            pbEnv.putAll(envInfo.environmentVariables)
+            environment?.let { pbEnv.putAll(it) }
+
+            pb.redirectErrorStream(true)
+
+            val p = pb.start()
+            process = p
+            outputStream = p.outputStream
+            inputStream = p.inputStream
+
+            _state.value = SessionState.Connected
+
+            scope.launch {
+                readLoop(p)
+            }
+        } catch (e: Exception) {
+            val message = e.message ?: "Failed to start local process"
+            BinBoxLogger.e("LocalProcessTransport", "Process start failed: $message", e)
+            _state.value = SessionState.Error(message)
+            listener?.onError(message, e)
+            cleanup()
+        }
+    }
+
+    private suspend fun CoroutineScope.readLoop(p: Process) {
+        val buffer = ByteArray(4096)
+        try {
+            while (isActive) {
+                val read = inputStream?.read(buffer) ?: -1
+                if (read > 0) {
+                    _bytesReceived.value += read
+                    listener?.onDataReceived(buffer.copyOf(read))
+                } else if (read == -1) {
+                    break
+                }
+            }
+
+            val exitCode = try {
+                p.waitFor()
+            } catch (e: Exception) {
+                p.exitValue()
+            }
+
+            _state.value = SessionState.Disconnected
+            listener?.onClosed("Process exited with code $exitCode")
+        } catch (e: Exception) {
+            val message = e.message ?: "Read error from local process"
+            _state.value = SessionState.Error(message)
+            listener?.onError(message, e)
+        } finally {
+            cleanup()
+        }
+    }
+
+    override fun sendData(data: ByteArray) {
+        scope.launch {
+            try {
+                outputStream?.let {
+                    it.write(data)
+                    it.flush()
+                    _bytesSent.value += data.size
+                }
+            } catch (e: Exception) {
+                listener?.onError("Write error to local process: ${e.message}", e)
+            }
+        }
+    }
+
+    override fun resize(cols: Int, rows: Int, widthPx: Int, heightPx: Int) {
+        // PTY window size notification for local shell
+        // Termux / Android process can receive stty rows/cols if supported
+        BinBoxLogger.d("LocalProcessTransport", "Window resize: ${cols}x$rows")
+    }
+
+    override fun disconnect() {
+        scope.launch {
+            cleanup()
+            _state.value = SessionState.Disconnected
+            listener?.onClosed("Disconnected by user")
+        }
+    }
+
+    private fun cleanup() {
+        try {
+            outputStream?.close()
+            inputStream?.close()
+            process?.destroy()
+        } catch (e: Exception) {
+            BinBoxLogger.w("LocalProcessTransport", "Cleanup warning: ${e.message}", e)
+        } finally {
+            outputStream = null
+            inputStream = null
+            process = null
+        }
+    }
+}

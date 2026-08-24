@@ -26,9 +26,17 @@ class TerminalSessionFactory(
 
             val session: ShellSession = when (profile.protocol) {
                 ProtocolType.LOCAL_SHELL -> {
+                    val workingDir = shellProfile.initialDirectory?.takeIf { it.isNotBlank() }?.let { java.io.File(it) }
+                    val customCommand = if (shellProfile.shellPath.isNotBlank() && shellProfile.id != "default") {
+                        listOf(shellProfile.shellPath)
+                    } else null
+
                     LocalShellSession(
                         title = profile.label.ifBlank { "Local Shell" },
                         hostLabel = "localhost",
+                        command = customCommand,
+                        workingDir = workingDir,
+                        environment = shellProfile.envVars.takeIf { it.isNotEmpty() },
                         initialTheme = theme,
                         onBell = onBell
                     )

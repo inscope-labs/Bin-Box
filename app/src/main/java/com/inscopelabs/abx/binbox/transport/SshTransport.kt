@@ -11,6 +11,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.InputStream
 import java.io.OutputStream
@@ -115,7 +116,7 @@ class SshTransport(
     private suspend fun CoroutineScope.readLoop(shellChannel: ChannelShell) {
         val buffer = ByteArray(4096)
         try {
-            while (kotlinx.coroutines.isActive && shellChannel.isConnected) {
+            while (isActive && shellChannel.isConnected) {
                 val read = inputStream?.read(buffer) ?: -1
                 if (read > 0) {
                     _bytesReceived.value += read

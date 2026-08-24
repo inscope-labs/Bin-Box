@@ -4,16 +4,16 @@ import com.inscopelabs.abx.binbox.terminal.model.SessionState
 import com.inscopelabs.abx.binbox.terminal.model.TerminalLine
 import com.inscopelabs.abx.binbox.terminal.model.TerminalSearchResults
 import com.inscopelabs.abx.binbox.terminal.model.TerminalThemePreset
-import com.jcraft.jsch.ChannelShell
-import com.jcraft.jsch.JSch
-import com.jcraft.jsch.Session
+import com.inscopelabs.abx.binbox.transport.ITransport
+import com.inscopelabs.abx.binbox.transport.LocalProcessTransport
+import com.inscopelabs.abx.binbox.transport.SshTransport
+import com.inscopelabs.abx.binbox.transport.TcpTransport
+import com.inscopelabs.abx.binbox.transport.TransportListener
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.Socket
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -63,35 +63,26 @@ interface ShellSession {
 }
 
 // ----------------------------------------------------
-// SSH Shell Session (JSch)
+// Base Transport Shell Session (Bridges ITransport to AnsiParser)
 // ----------------------------------------------------
-class SshShellSession(
+open class TransportShellSession(
     override val id: String = UUID.randomUUID().toString(),
     override val title: String,
     override val hostLabel: String,
-    private val host: String,
-    private val port: Int = 22,
-    private val username: String,
-    private val password: String? = null,
-    private val privateKey: String? = null,
-    private val privateKeyPassphrase: String? = null,
+    val transport: ITransport,
     private var initialTheme: TerminalThemePreset,
-    private val onBell: (() -> Unit)? = null
+    private val onBell: (() -> Unit)? = null,
+    private val startupBanner: String? = null
 ) : ShellSession {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val _state = MutableStateFlow<SessionState>(SessionState.Disconnected)
-    override val state: StateFlow<SessionState> = _state.asStateFlow()
+    override val state: StateFlow<SessionState> = transport.state
+    override val bytesReceived: StateFlow<Long> = transport.bytesReceived
+    override val bytesSent: StateFlow<Long> = transport.bytesSent
 
     private val ansiParser = AnsiParser(initialTheme, onBell)
     private val _lines = MutableStateFlow<List<TerminalLine>>(emptyList())
     override val lines: StateFlow<List<TerminalLine>> = _lines.asStateFlow()
-
-    private val _bytesReceived = MutableStateFlow(0L)
-    override val bytesReceived: StateFlow<Long> = _bytesReceived.asStateFlow()
-
-    private val _bytesSent = MutableStateFlow(0L)
-    override val bytesSent: StateFlow<Long> = _bytesSent.asStateFlow()
 
     private val logBuffer = StringBuilder()
     override val rawLogText: String
@@ -100,117 +91,42 @@ class SshShellSession(
     override val isBracketedPasteMode: Boolean
         get() = ansiParser.isBracketedPasteMode
 
-    private var jschSession: Session? = null
-    private var channel: ChannelShell? = null
-    private var outputStream: OutputStream? = null
-    private var inputStream: InputStream? = null
-
-    override fun start() {
-        if (_state.value == SessionState.Connected || _state.value == SessionState.Connecting) return
-
-        _state.value = SessionState.Connecting
-        appendBanner("Connecting to $username@$host:$port via SSH...\r\n")
-
-        scope.launch {
-            try {
-                val jsch = JSch()
-
-                if (!privateKey.isNullOrBlank()) {
-                    val keyBytes = privateKey.toByteArray(Charsets.UTF_8)
-                    val passBytes = privateKeyPassphrase?.takeIf { it.isNotEmpty() }?.toByteArray(Charsets.UTF_8)
-                    jsch.addIdentity("custom_id", keyBytes, null, passBytes)
-                }
-
-                val session = jsch.getSession(username, host, port)
-                if (!password.isNullOrBlank()) {
-                    session.setPassword(password)
-                }
-
-                val config = Properties()
-                config["StrictHostKeyChecking"] = "no"
-                config["PreferredAuthentications"] = "publickey,password,keyboard-interactive"
-                session.setConfig(config)
-                session.timeout = 15000
-
-                session.connect()
-                jschSession = session
-
-                val shellChannel = session.openChannel("shell") as ChannelShell
-                shellChannel.setPtyType("xterm-256color", 80, 24, 640, 480)
-                channel = shellChannel
-
-                outputStream = shellChannel.outputStream
-                inputStream = shellChannel.inputStream
-
-                shellChannel.connect(10000)
-                _state.value = SessionState.Connected
-                appendBanner("\u001B[32m✔ Connected to $hostLabel ($host:$port)\u001B[0m\r\n\r\n")
-
-                // Read Loop
-                val buffer = ByteArray(4096)
-                while (isActive && shellChannel.isConnected) {
-                    val read = inputStream?.read(buffer) ?: -1
-                    if (read > 0) {
-                        _bytesReceived.value += read
-                        val chunk = String(buffer, 0, read, Charsets.UTF_8)
-                        appendOutput(chunk)
-                    } else if (read == -1) {
-                        break
-                    }
-                }
-
-                _state.value = SessionState.Disconnected
-                appendBanner("\r\n\u001B[33m[Connection closed by remote host]\u001B[0m\r\n")
-            } catch (e: Exception) {
-                val errorMsg = e.message ?: "Connection failed"
-                _state.value = SessionState.Error(errorMsg)
-                appendBanner("\r\n\u001B[31m✖ SSH Error: $errorMsg\u001B[0m\r\n")
-            } finally {
-                cleanup()
+    init {
+        transport.setListener(object : TransportListener {
+            override fun onDataReceived(data: ByteArray) {
+                val text = String(data, Charsets.UTF_8)
+                appendOutput(text)
             }
-        }
+
+            override fun onClosed(reason: String?) {
+                if (!reason.isNullOrBlank()) {
+                    appendOutput("\r\n\u001B[33m[$reason]\u001B[0m\r\n")
+                }
+            }
+
+            override fun onError(message: String, cause: Throwable?) {
+                appendOutput("\r\n\u001B[31m✖ Error: $message\u001B[0m\r\n")
+            }
+        })
     }
 
-    override fun resize(cols: Int, rows: Int, widthPx: Int, heightPx: Int) {
+    override fun start() {
+        startupBanner?.let { appendOutput(it) }
         scope.launch {
-            try {
-                channel?.setPtySize(cols, rows, widthPx.coerceAtLeast(640), heightPx.coerceAtLeast(480))
-            } catch (e: Exception) {
-                // Ignore
-            }
+            transport.connect()
         }
     }
 
     override fun sendInput(text: String) {
-        scope.launch {
-            try {
-                outputStream?.let {
-                    val bytes = text.toByteArray(Charsets.UTF_8)
-                    it.write(bytes)
-                    it.flush()
-                    _bytesSent.value += bytes.size
-                }
-            } catch (e: Exception) {
-                appendBanner("\r\n\u001B[31m[Write Error: ${e.message}]\u001B[0m\r\n")
-            }
-        }
+        transport.sendData(text.toByteArray(Charsets.UTF_8))
     }
 
     override fun sendSpecialKey(key: TerminalKey) {
-        sendRawBytes(TerminalKeyTranslator.translateSpecialKey(key))
+        transport.sendData(TerminalKeyTranslator.translateSpecialKey(key))
     }
 
     override fun sendRawBytes(bytes: ByteArray) {
-        scope.launch {
-            try {
-                outputStream?.let {
-                    it.write(bytes)
-                    it.flush()
-                }
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
+        transport.sendData(bytes)
     }
 
     override fun search(query: String, ignoreCase: Boolean): TerminalSearchResults {
@@ -228,11 +144,7 @@ class SshShellSession(
     }
 
     override fun disconnect() {
-        scope.launch {
-            cleanup()
-            _state.value = SessionState.Disconnected
-            appendBanner("\r\n\u001B[33m[Session disconnected by user]\u001B[0m\r\n")
-        }
+        transport.disconnect()
     }
 
     override fun updateTheme(theme: TerminalThemePreset) {
@@ -240,32 +152,48 @@ class SshShellSession(
         _lines.value = ansiParser.getLines()
     }
 
-    private fun appendBanner(text: String) {
-        appendOutput(text)
+    override fun resize(cols: Int, rows: Int, widthPx: Int, heightPx: Int) {
+        transport.resize(cols, rows, widthPx, heightPx)
     }
 
-    private fun appendOutput(chunk: String) {
+    protected fun appendOutput(chunk: String) {
         logBuffer.append(chunk)
         ansiParser.feed(chunk)
         _lines.value = ansiParser.getLines()
     }
-
-    private fun cleanup() {
-        try {
-            outputStream?.close()
-            inputStream?.close()
-            channel?.disconnect()
-            jschSession?.disconnect()
-        } catch (e: Exception) {
-            // Ignore
-        } finally {
-            outputStream = null
-            inputStream = null
-            channel = null
-            jschSession = null
-        }
-    }
 }
+
+// ----------------------------------------------------
+// SSH Shell Session (Delegates to SshTransport)
+// ----------------------------------------------------
+class SshShellSession(
+    override val id: String = UUID.randomUUID().toString(),
+    override val title: String,
+    override val hostLabel: String,
+    host: String,
+    port: Int = 22,
+    username: String,
+    password: String? = null,
+    privateKey: String? = null,
+    privateKeyPassphrase: String? = null,
+    initialTheme: TerminalThemePreset,
+    onBell: (() -> Unit)? = null
+) : TransportShellSession(
+    id = id,
+    title = title,
+    hostLabel = hostLabel,
+    transport = SshTransport(
+        host = host,
+        port = port,
+        username = username,
+        password = password,
+        privateKey = privateKey,
+        privateKeyPassphrase = privateKeyPassphrase
+    ),
+    initialTheme = initialTheme,
+    onBell = onBell,
+    startupBanner = "Connecting to $username@$host:$port via SSH...\r\n"
+)
 
 // ----------------------------------------------------
 // Local Shell Session (Android sh)
@@ -274,290 +202,48 @@ class LocalShellSession(
     override val id: String = UUID.randomUUID().toString(),
     override val title: String = "Local Shell",
     override val hostLabel: String = "localhost",
-    private var initialTheme: TerminalThemePreset,
-    private val onBell: (() -> Unit)? = null
-) : ShellSession {
-
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val _state = MutableStateFlow<SessionState>(SessionState.Disconnected)
-    override val state: StateFlow<SessionState> = _state.asStateFlow()
-
-    private val ansiParser = AnsiParser(initialTheme, onBell)
-    private val _lines = MutableStateFlow<List<TerminalLine>>(emptyList())
-    override val lines: StateFlow<List<TerminalLine>> = _lines.asStateFlow()
-
-    private val _bytesReceived = MutableStateFlow(0L)
-    override val bytesReceived: StateFlow<Long> = _bytesReceived.asStateFlow()
-
-    private val _bytesSent = MutableStateFlow(0L)
-    override val bytesSent: StateFlow<Long> = _bytesSent.asStateFlow()
-
-    private val logBuffer = StringBuilder()
-    override val rawLogText: String
-        get() = logBuffer.toString()
-
-    override val isBracketedPasteMode: Boolean
-        get() = ansiParser.isBracketedPasteMode
-
-    private var process: Process? = null
-    private var processOut: OutputStream? = null
-    private var processIn: InputStream? = null
-    private var processErr: InputStream? = null
-
-    override fun start() {
-        if (_state.value == SessionState.Connected) return
-        _state.value = SessionState.Connecting
-
-        appendOutput("\u001B[1;36m┌──(binbox㉿localhost)-[~]\r\n└─$ \u001B[0m\u001B[32mStarting Local Shell (Android /system/bin/sh)...\u001B[0m\r\n")
-
-        scope.launch {
-            try {
-                val shellPath = if (java.io.File("/system/bin/sh").exists()) "/system/bin/sh" else "/bin/sh"
-                val pb = ProcessBuilder(shellPath)
-                pb.environment()["TERM"] = "xterm-256color"
-                pb.environment()["PS1"] = "\\u@\\h:\\w\\$ "
-                pb.redirectErrorStream(true)
-
-                val p = pb.start()
-                process = p
-                processOut = p.outputStream
-                processIn = p.inputStream
-
-                _state.value = SessionState.Connected
-                appendOutput("\u001B[1;32m✔ Local process initialized. Type 'help' or standard POSIX commands.\u001B[0m\r\n\r\n")
-
-                // Prompt user
-                sendInput("echo 'Welcome to Bin Box Local Shell. OS: Android (Linux Kernel '$(uname -r)')'\n")
-
-                val buffer = ByteArray(2048)
-                while (isActive) {
-                    val read = processIn?.read(buffer) ?: -1
-                    if (read > 0) {
-                        _bytesReceived.value += read
-                        val text = String(buffer, 0, read, Charsets.UTF_8)
-                        appendOutput(text)
-                    } else if (read == -1) {
-                        break
-                    }
-                }
-
-                _state.value = SessionState.Disconnected
-                appendOutput("\r\n\u001B[33m[Local shell process exited with code ${p.exitValue()}]\u001B[0m\r\n")
-            } catch (e: Exception) {
-                _state.value = SessionState.Error(e.message ?: "Failed to start local shell")
-                appendOutput("\r\n\u001B[31m✖ Local Shell Error: ${e.message}\u001B[0m\r\n")
-            }
-        }
-    }
-
-    override fun sendInput(text: String) {
-        scope.launch {
-            try {
-                processOut?.let {
-                    val bytes = text.toByteArray(Charsets.UTF_8)
-                    it.write(bytes)
-                    it.flush()
-                    _bytesSent.value += bytes.size
-                }
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
-    }
-
-    override fun sendSpecialKey(key: TerminalKey) {
-        sendRawBytes(TerminalKeyTranslator.translateSpecialKey(key))
-    }
-
-    override fun sendRawBytes(bytes: ByteArray) {
-        scope.launch {
-            try {
-                processOut?.let {
-                    it.write(bytes)
-                    it.flush()
-                }
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
-    }
-
-    override fun search(query: String, ignoreCase: Boolean): TerminalSearchResults {
-        return ansiParser.search(query, ignoreCase)
-    }
-
-    override fun clear() {
-        ansiParser.clear()
-        _lines.value = emptyList()
-    }
-
-    override fun reset() {
-        ansiParser.reset()
-        _lines.value = emptyList()
-    }
-
-    override fun disconnect() {
-        try {
-            process?.destroy()
-            processOut?.close()
-            processIn?.close()
-        } catch (e: Exception) {
-            // Ignore
-        }
-        _state.value = SessionState.Disconnected
-        appendOutput("\r\n\u001B[33m[Local shell terminated]\u001B[0m\r\n")
-    }
-
-    override fun updateTheme(theme: TerminalThemePreset) {
-        ansiParser.updateTheme(theme)
-        _lines.value = ansiParser.getLines()
-    }
-
-    private fun appendOutput(chunk: String) {
-        logBuffer.append(chunk)
-        ansiParser.feed(chunk)
-        _lines.value = ansiParser.getLines()
-    }
-}
+    command: List<String>? = null,
+    workingDir: File? = null,
+    environment: Map<String, String>? = null,
+    preferTermux: Boolean = true,
+    transport: LocalProcessTransport = LocalProcessTransport(
+        command = command,
+        workingDir = workingDir,
+        environment = environment,
+        preferTermux = preferTermux
+    ),
+    initialTheme: TerminalThemePreset,
+    onBell: (() -> Unit)? = null
+) : TransportShellSession(
+    id = id,
+    title = title,
+    hostLabel = hostLabel,
+    transport = transport,
+    initialTheme = initialTheme,
+    onBell = onBell,
+    startupBanner = "\u001B[1;36m┌──(binbox㉿localhost)-[~]\r\n└─$ \u001B[0m\u001B[32mStarting Local Shell (Termux / Android sh)...\u001B[0m\r\n"
+)
 
 // ----------------------------------------------------
-// Telnet / Raw TCP Shell Session
+// Telnet / Raw TCP Shell Session (Delegates to TcpTransport)
 // ----------------------------------------------------
 class TelnetShellSession(
     override val id: String = UUID.randomUUID().toString(),
     override val title: String,
     override val hostLabel: String,
-    private val host: String,
-    private val port: Int = 23,
-    private var initialTheme: TerminalThemePreset,
-    private val onBell: (() -> Unit)? = null
-) : ShellSession {
-
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val _state = MutableStateFlow<SessionState>(SessionState.Disconnected)
-    override val state: StateFlow<SessionState> = _state.asStateFlow()
-
-    private val ansiParser = AnsiParser(initialTheme, onBell)
-    private val _lines = MutableStateFlow<List<TerminalLine>>(emptyList())
-    override val lines: StateFlow<List<TerminalLine>> = _lines.asStateFlow()
-
-    private val logBuffer = StringBuilder()
-    override val rawLogText: String
-        get() = logBuffer.toString()
-
-    override val isBracketedPasteMode: Boolean
-        get() = ansiParser.isBracketedPasteMode
-
-    private var socket: Socket? = null
-    private var outStream: OutputStream? = null
-    private var inStream: InputStream? = null
-
-    override fun start() {
-        if (_state.value == SessionState.Connected || _state.value == SessionState.Connecting) return
-        _state.value = SessionState.Connecting
-
-        appendOutput("Connecting to $host:$port via Telnet/TCP...\r\n")
-
-        scope.launch {
-            try {
-                val s = Socket(host, port)
-                s.soTimeout = 0
-                socket = s
-                outStream = s.getOutputStream()
-                inStream = s.getInputStream()
-
-                _state.value = SessionState.Connected
-                appendOutput("\u001B[32m✔ Connected to Telnet host $host:$port\u001B[0m\r\n\r\n")
-
-                val buffer = ByteArray(2048)
-                while (isActive && s.isConnected && !s.isClosed) {
-                    val read = inStream?.read(buffer) ?: -1
-                    if (read > 0) {
-                        // Filter telnet IAC sequences if standard telnet (IAC=255)
-                        val text = String(buffer, 0, read, Charsets.UTF_8)
-                        appendOutput(text)
-                    } else if (read == -1) {
-                        break
-                    }
-                }
-
-                _state.value = SessionState.Disconnected
-                appendOutput("\r\n\u001B[33m[Telnet connection closed]\u001B[0m\r\n")
-            } catch (e: Exception) {
-                _state.value = SessionState.Error(e.message ?: "Telnet failed")
-                appendOutput("\r\n\u001B[31m✖ Telnet Error: ${e.message}\u001B[0m\r\n")
-            } finally {
-                disconnect()
-            }
-        }
-    }
-
-    override fun sendInput(text: String) {
-        scope.launch {
-            try {
-                outStream?.let {
-                    it.write(text.toByteArray(Charsets.UTF_8))
-                    it.flush()
-                }
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
-    }
-
-    override fun sendSpecialKey(key: TerminalKey) {
-        sendRawBytes(TerminalKeyTranslator.translateSpecialKey(key))
-    }
-
-    override fun sendRawBytes(bytes: ByteArray) {
-        scope.launch {
-            try {
-                outStream?.let {
-                    it.write(bytes)
-                    it.flush()
-                }
-            } catch (e: Exception) {
-                // Ignore
-            }
-        }
-    }
-
-    override fun search(query: String, ignoreCase: Boolean): TerminalSearchResults {
-        return ansiParser.search(query, ignoreCase)
-    }
-
-    override fun clear() {
-        ansiParser.clear()
-        _lines.value = emptyList()
-    }
-
-    override fun reset() {
-        ansiParser.reset()
-        _lines.value = emptyList()
-    }
-
-    override fun disconnect() {
-        try {
-            outStream?.close()
-            inStream?.close()
-            socket?.close()
-        } catch (e: Exception) {
-            // Ignore
-        }
-        _state.value = SessionState.Disconnected
-    }
-
-    override fun updateTheme(theme: TerminalThemePreset) {
-        ansiParser.updateTheme(theme)
-        _lines.value = ansiParser.getLines()
-    }
-
-    private fun appendOutput(chunk: String) {
-        logBuffer.append(chunk)
-        ansiParser.feed(chunk)
-        _lines.value = ansiParser.getLines()
-    }
-}
+    host: String,
+    port: Int = 23,
+    initialTheme: TerminalThemePreset,
+    onBell: (() -> Unit)? = null
+) : TransportShellSession(
+    id = id,
+    title = title,
+    hostLabel = hostLabel,
+    transport = TcpTransport(host = host, port = port),
+    initialTheme = initialTheme,
+    onBell = onBell,
+    startupBanner = "Connecting to $host:$port via TCP/Telnet...\r\n"
+)
 
 // ----------------------------------------------------
 // Interactive Demo / Sandbox Linux Host Shell Session
