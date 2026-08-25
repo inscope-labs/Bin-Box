@@ -7,11 +7,13 @@ package com.inscopelabs.abx.binbox.oci.provisioning
  *
  * Ampere A1 (`VM.Standard.A1.Flex`): tenancy-wide pool of 4 OCPUs / 24 GB
  * memory, splittable across up to 4 instances. [DEFAULT_A1_OCPUS]/
- * [DEFAULT_A1_MEMORY_GB] deliberately use HALF the pool (2 OCPUs / 12 GB)
- * rather than the tenancy max, so provisioning one Bin-Box VM doesn't
- * silently consume 100% of the free Ampere allocation and block a second
- * instance later. Confirm with the user before changing this default —
- * it's a product decision, not just a technical one.
+ * [DEFAULT_A1_MEMORY_GB] are [OciProvisioner.provision]'s DEFAULT when the
+ * caller doesn't specify a split — deliberately HALF the pool (2 OCPUs /
+ * 12 GB) rather than the tenancy max, so a single default call doesn't
+ * silently consume the entire free Ampere allocation. To split across two
+ * VMs, pass an explicit `flexOcpus`/`flexMemoryInGBs` to each of two
+ * `provision()` calls instead of relying on this default — see
+ * [OciProvisioner]'s kdoc.
  *
  * E2 Micro (`VM.Standard.E2.1.Micro`): fixed shape (no shapeConfig), AMD,
  * up to 2 instances tenancy-wide, restricted to a single availability

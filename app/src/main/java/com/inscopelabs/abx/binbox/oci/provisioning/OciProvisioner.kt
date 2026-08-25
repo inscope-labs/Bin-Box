@@ -14,6 +14,18 @@ import com.inscopelabs.abx.binbox.oci.api.compute.LaunchInstanceShapeConfig
  * are selections that belong in front of this class (wizard UI /
  * discovery step), not decided implicitly here. Callers pass a fully
  * resolved [OciProvisioningContext].
+ *
+ * Flex-shape allocation ([flexOcpus]/[flexMemoryInGBs]) is a [provision]
+ * parameter, not a hardcoded constant — [OciFreeTierShapes.DEFAULT_A1_OCPUS]/
+ * `DEFAULT_A1_MEMORY_GB` are only the default when the caller doesn't
+ * specify a split. To provision two VMs sharing the Ampere A1 pool
+ * (e.g. 1 OCPU/6GB each, or any split totaling <= 4 OCPUs/24GB), call
+ * [provision] twice with two different [OciProvisioningSession]s (one
+ * instance per session — this class doesn't model multiple instances in
+ * one session) and a different split each time. [NetworkProvisioner]'s
+ * discover-or-create already makes the second call reuse the same VCN/
+ * subnet rather than duplicating it, so no networking change is needed for
+ * this — only the split needs to vary per call.
  */
 class OciProvisioner(private val client: OciClient) {
 
@@ -24,6 +36,8 @@ class OciProvisioner(private val client: OciClient) {
         session: OciProvisioningSession,
         context: OciProvisioningContext,
         sshPublicKey: String,
+        flexOcpus: Double = OciFreeTierShapes.DEFAULT_A1_OCPUS,
+        flexMemoryInGBs: Double = OciFreeTierShapes.DEFAULT_A1_MEMORY_GB,
         onSessionUpdate: suspend (OciProvisioningSession) -> Unit
     ): OciResult<OciProvisioningSession> {
         val compartmentId = context.selectedCompartmentOcid
@@ -57,8 +71,8 @@ class OciProvisioner(private val client: OciClient) {
 
         val shapeConfig = if (OciFreeTierShapes.isFlexShape(shape)) {
             LaunchInstanceShapeConfig(
-                ocpus = OciFreeTierShapes.DEFAULT_A1_OCPUS,
-                memoryInGBs = OciFreeTierShapes.DEFAULT_A1_MEMORY_GB
+                ocpus = flexOcpus,
+                memoryInGBs = flexMemoryInGBs
             )
         } else null
 
