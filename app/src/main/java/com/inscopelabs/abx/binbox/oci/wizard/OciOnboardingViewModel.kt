@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
 import com.inscopelabs.abx.binbox.core.result.AppResult
 import com.inscopelabs.abx.binbox.data.database.AppDatabase
+import com.inscopelabs.abx.binbox.data.repository.HostRepositoryImpl
 import com.inscopelabs.abx.binbox.data.repository.KeyRepositoryImpl
 import com.inscopelabs.abx.binbox.oci.api.OciClient
 import com.inscopelabs.abx.binbox.oci.api.compartments.Compartment
@@ -19,9 +20,13 @@ import com.inscopelabs.abx.binbox.oci.provisioning.OciContextDiscovery
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningContext
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningRepository
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioner
+import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningSession
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningState
 import com.inscopelabs.abx.binbox.oci.provisioning.OciResult
 import com.inscopelabs.abx.binbox.oci.provisioning.OciSshKeyProvisioner
+import com.inscopelabs.abx.binbox.oci.terminal.OciHostRegistrar
+import com.inscopelabs.abx.binbox.oci.terminal.OciShellHost
+import com.inscopelabs.abx.binbox.oci.terminal.defaultSshUsernameFor
 import com.inscopelabs.abx.binbox.security.SecureStorageService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,11 +47,12 @@ import kotlinx.coroutines.launch
  * [selectAvailabilityDomain]/[selectShape] and [startProvisioning] are also
  * real as of this pass — the full compartment/AD/shape/image discovery and
  * selection flow, then [com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioner]
- * end to end through public IP discovery. NOT yet built: SSH verification
- * (§25) and host registration (§26) — the wizard reaches
- * [OciOnboardingStage.SSH_VERIFICATION] after a successful provision but
- * nothing there confirms SSH reachability or registers the host in
- * `IHostRepository` yet.
+ * end to end through public IP discovery, followed automatically by
+ * [registerHost] (§26) — a real [com.inscopelabs.abx.binbox.domain.repository.IHostRepository]
+ * entry, connectable from Bin-Box's normal terminal list once provisioning
+ * succeeds. NOT yet built: SSH verification (§25) — [registerHost] runs
+ * immediately after public IP discovery without first confirming the
+ * instance is actually SSH-reachable (see that function's kdoc).
  */
 class OciOnboardingViewModel(
     application: Application,
@@ -57,6 +63,9 @@ class OciOnboardingViewModel(
     private val provisioningRepository = OciProvisioningRepository(application)
     private val keyRepository = KeyRepositoryImpl(AppDatabase.getInstance(application).keyDao(), secureStorage)
     private val sshKeyProvisioner = OciSshKeyProvisioner(keyRepository)
+    private val hostRegistrar = OciHostRegistrar(
+        HostRepositoryImpl(AppDatabase.getInstance(application).hostDao(), secureStorage)
+    )
 
     private val _stage = MutableStateFlow(OciOnboardingStage.WELCOME)
     val stage: StateFlow<OciOnboardingStage> = _stage.asStateFlow()
@@ -369,11 +378,67 @@ class OciOnboardingViewModel(
                         )
                     }
                     advanceTo(OciOnboardingStage.SSH_VERIFICATION)
+                    registerHost(credentials, result.data)
                 }
                 is OciResult.Error -> {
                     _uiState.update { it.copy(isProvisioning = false, error = result.error.whatHappened) }
                     BinBoxLogger.e("OciOnboardingViewModel", "Provisioning failed: ${result.error.whatHappened}")
                 }
+            }
+        }
+    }
+
+    /**
+     * §26: registers the provisioned instance as a real Bin-Box host. Runs
+     * automatically once [startProvisioning] succeeds — unlike shape/image
+     * selection, there's no user judgment call left to make here, so this
+     * isn't a separate wizard-driven event.
+     *
+     * NOT §25 (SSH verification) — that still doesn't exist. This registers
+     * the host as soon as the instance and its public IP exist, without
+     * first confirming SSH is actually reachable. A host that's registered
+     * but not yet reachable will simply fail to connect in the terminal
+     * like any other host with a bad address would — not silently broken,
+     * but not pre-verified either. Flagged as a known gap, not hidden.
+     */
+    private suspend fun registerHost(credentials: OciCredentials, provisioned: OciProvisioningSession) {
+        val instanceId = provisioned.instanceOcid
+        val publicIp = provisioned.publicIp
+        val compartmentId = provisioned.context.selectedCompartmentOcid
+        if (instanceId == null || publicIp == null || compartmentId == null) {
+            _uiState.update { it.copy(error = "Provisioning succeeded but is missing data needed to register the host.") }
+            return
+        }
+
+        val selectedImage = _uiState.value.discoveredImages.firstOrNull { it.id == provisioned.context.selectedImageOcid }
+        val username = selectedImage?.operatingSystem?.let { defaultSshUsernameFor(it) } ?: "opc"
+
+        val sshKeyRepositoryId = provisioned.sshKeyAlias?.toLongOrNull()
+
+        val shellHost = OciShellHost(
+            id = provisioned.sessionId,
+            displayName = "Oracle Cloud (${credentials.region})",
+            hostname = publicIp,
+            username = username,
+            sshKeyAlias = provisioned.sshKeyAlias,
+            instanceOcid = instanceId,
+            region = credentials.region,
+            compartmentOcid = compartmentId
+        )
+
+        when (val result = hostRegistrar.register(shellHost, sshKeyRepositoryId)) {
+            is AppResult.Success -> {
+                session = session.copy(
+                    registeredShellHostId = result.data.toString(),
+                    updatedAtMillis = System.currentTimeMillis()
+                )
+                provisioningRepository.save(session)
+                advanceTo(OciOnboardingStage.SHELL_READY)
+                persistSessionState(OciProvisioningState.SHELL_READY)
+            }
+            is AppResult.Error -> {
+                _uiState.update { it.copy(error = "Instance provisioned, but couldn't add it as a host: ${result.error.userMessage}") }
+                BinBoxLogger.e("OciOnboardingViewModel", "Host registration failed: ${result.error.userMessage}")
             }
         }
     }
@@ -401,7 +466,9 @@ class OciOnboardingViewModel(
         OciProvisioningState.INSTANCE_PROVISIONING,
         OciProvisioningState.INSTANCE_RUNNING -> OciOnboardingStage.INSTANCE_PROVISIONING
         OciProvisioningState.PUBLIC_IP_DISCOVERED -> OciOnboardingStage.SSH_VERIFICATION
-        else -> OciOnboardingStage.OCI_CONTEXT_DISCOVERY // failure states and anything past SSH verification aren't wired into UI yet
+        OciProvisioningState.HOST_REGISTERED -> OciOnboardingStage.HOST_REGISTRATION
+        OciProvisioningState.SHELL_READY -> OciOnboardingStage.SHELL_READY
+        else -> OciOnboardingStage.OCI_CONTEXT_DISCOVERY // failure states aren't wired into UI yet
     }
 }
 
