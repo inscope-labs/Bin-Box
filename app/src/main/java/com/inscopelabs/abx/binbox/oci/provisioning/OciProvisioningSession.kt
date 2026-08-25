@@ -10,6 +10,7 @@ data class OciProvisioningContext(
     val availableCompartmentOcids: List<String> = emptyList(),
     val selectedCompartmentOcid: String? = null, // null = tenancy root (§16 default)
     val availabilityDomains: List<String> = emptyList(),
+    val selectedAvailabilityDomain: String? = null,
     val eligibleShapeNames: List<String> = emptyList(),
     val selectedShapeName: String? = null,
     val eligibleImageOcids: List<String> = emptyList(),

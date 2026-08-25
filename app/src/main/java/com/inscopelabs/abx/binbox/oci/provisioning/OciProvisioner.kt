@@ -42,7 +42,7 @@ class OciProvisioner(private val client: OciClient) {
     ): OciResult<OciProvisioningSession> {
         val compartmentId = context.selectedCompartmentOcid
             ?: return OciResult.Error(missingSelection("compartment"))
-        val availabilityDomain = context.availabilityDomains.firstOrNull()
+        val availabilityDomain = context.selectedAvailabilityDomain
             ?: return OciResult.Error(missingSelection("availability domain"))
         val shape = context.selectedShapeName
             ?: return OciResult.Error(missingSelection("shape"))

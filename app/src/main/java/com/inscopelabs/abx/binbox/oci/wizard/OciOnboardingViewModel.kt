@@ -8,13 +8,19 @@ import com.inscopelabs.abx.binbox.core.result.AppResult
 import com.inscopelabs.abx.binbox.data.database.AppDatabase
 import com.inscopelabs.abx.binbox.data.repository.KeyRepositoryImpl
 import com.inscopelabs.abx.binbox.oci.api.OciClient
+import com.inscopelabs.abx.binbox.oci.api.compartments.Compartment
+import com.inscopelabs.abx.binbox.oci.api.compute.Image
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentialsStore
 import com.inscopelabs.abx.binbox.oci.identity.OciFingerprint
 import com.inscopelabs.abx.binbox.oci.identity.OciKeyManager
 import com.inscopelabs.abx.binbox.oci.provisioning.OciApiErrorMapper
+import com.inscopelabs.abx.binbox.oci.provisioning.OciContextDiscovery
+import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningContext
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningRepository
+import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioner
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningState
+import com.inscopelabs.abx.binbox.oci.provisioning.OciResult
 import com.inscopelabs.abx.binbox.oci.provisioning.OciSshKeyProvisioner
 import com.inscopelabs.abx.binbox.security.SecureStorageService
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,13 +35,18 @@ import kotlinx.coroutines.launch
  *
  * SCOPE OF THIS PHASE: stages through [OciOnboardingStage.CONNECTION_VERIFICATION]
  * are real — key generation, credential persistence, the account-info
- * form, and now [verifyConnection] itself (a real GetUser call through
+ * form, and [verifyConnection] itself (a real GetUser call through
  * [com.inscopelabs.abx.binbox.oci.api.OciClient]) are all backed by
- * working code below. [generateVmSshKey] (§20) is also real and
- * independent of the API-dependent stages. Everything from
- * [OciOnboardingStage.OCI_CONTEXT_DISCOVERY] through instance provisioning
- * (§15-26 minus the pieces already covered by the `api/` package and
- * [generateVmSshKey]) is not yet wired into this ViewModel.
+ * working code below. [generateVmSshKey] (§20) is real and independent of
+ * the API-dependent stages. [discoverContext]/[selectCompartment]/
+ * [selectAvailabilityDomain]/[selectShape] and [startProvisioning] are also
+ * real as of this pass — the full compartment/AD/shape/image discovery and
+ * selection flow, then [com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioner]
+ * end to end through public IP discovery. NOT yet built: SSH verification
+ * (§25) and host registration (§26) — the wizard reaches
+ * [OciOnboardingStage.SSH_VERIFICATION] after a successful provision but
+ * nothing there confirms SSH reachability or registers the host in
+ * `IHostRepository` yet.
  */
 class OciOnboardingViewModel(
     application: Application,
@@ -44,9 +55,8 @@ class OciOnboardingViewModel(
 
     private val credentialsStore = OciCredentialsStore(application, secureStorage)
     private val provisioningRepository = OciProvisioningRepository(application)
-    private val sshKeyProvisioner = OciSshKeyProvisioner(
-        KeyRepositoryImpl(AppDatabase.getInstance(application).keyDao(), secureStorage)
-    )
+    private val keyRepository = KeyRepositoryImpl(AppDatabase.getInstance(application).keyDao(), secureStorage)
+    private val sshKeyProvisioner = OciSshKeyProvisioner(keyRepository)
 
     private val _stage = MutableStateFlow(OciOnboardingStage.WELCOME)
     val stage: StateFlow<OciOnboardingStage> = _stage.asStateFlow()
@@ -89,6 +99,20 @@ class OciOnboardingViewModel(
             is OciOnboardingEvent.VerifyConnection -> verifyConnection()
 
             OciOnboardingEvent.GenerateVmSshKey -> generateVmSshKey()
+
+            OciOnboardingEvent.DiscoverContext -> discoverContext()
+
+            is OciOnboardingEvent.SelectCompartment -> selectCompartment(event.compartmentOcid)
+
+            is OciOnboardingEvent.SelectAvailabilityDomain -> selectAvailabilityDomain(event.availabilityDomain)
+
+            is OciOnboardingEvent.SelectShape -> selectShape(event.shape)
+
+            is OciOnboardingEvent.SelectImage -> {
+                _uiState.update { it.copy(context = it.context.copy(selectedImageOcid = event.imageOcid)) }
+            }
+
+            OciOnboardingEvent.StartProvisioning -> startProvisioning()
 
             OciOnboardingEvent.Cancel -> {
                 persistSessionState(OciProvisioningState.CANCELLED)
@@ -215,6 +239,145 @@ class OciOnboardingViewModel(
         }
     }
 
+    /** Shared with [discoverContext]/[startProvisioning] — same construction pattern as [verifyConnection]. */
+    private fun requireClient(): OciClient? =
+        _uiState.value.credentials?.let { creds -> OciClient(creds.region) { _uiState.value.credentials } }
+
+    /**
+     * §15-17: populates compartments and availability domains once auth is
+     * verified. Pre-selects the tenancy root as the compartment — visibly,
+     * in [OciOnboardingUiState.context], not silently: the user can
+     * override via [OciOnboardingEvent.SelectCompartment].
+     */
+    private fun discoverContext() {
+        val credentials = _uiState.value.credentials
+        val client = requireClient()
+        if (credentials == null || client == null) {
+            _uiState.update { it.copy(error = "No verified OCI connection yet.") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isDiscovering = true, error = null) }
+            val discovery = OciContextDiscovery(client)
+
+            val compartmentsResult = discovery.fetchCompartments(credentials.tenancyOcid)
+            val adResult = discovery.fetchAvailabilityDomains(credentials.tenancyOcid)
+
+            val compartments = (compartmentsResult as? OciResult.Success)?.data
+            val ads = (adResult as? OciResult.Success)?.data
+
+            val firstError = (compartmentsResult as? OciResult.Error)?.error
+                ?: (adResult as? OciResult.Error)?.error
+
+            if (firstError != null) {
+                _uiState.update { it.copy(isDiscovering = false, error = firstError.whatHappened) }
+                return@launch
+            }
+
+            _uiState.update {
+                it.copy(
+                    isDiscovering = false,
+                    discoveredCompartments = compartments.orEmpty(),
+                    discoveredAvailabilityDomains = ads.orEmpty().map { ad -> ad.name },
+                    context = it.context.copy(
+                        availableCompartmentOcids = compartments.orEmpty().map { c -> c.id },
+                        selectedCompartmentOcid = it.context.selectedCompartmentOcid ?: credentials.tenancyOcid,
+                        availabilityDomains = ads.orEmpty().map { ad -> ad.name }
+                    ),
+                    error = null
+                )
+            }
+            advanceTo(OciOnboardingStage.HOST_CONFIGURATION)
+            persistSessionState(OciProvisioningState.CONTEXT_DISCOVERED)
+        }
+    }
+
+    private fun selectCompartment(compartmentOcid: String) {
+        _uiState.update { it.copy(context = it.context.copy(selectedCompartmentOcid = compartmentOcid)) }
+    }
+
+    /** Selecting an AD is also when eligible shapes become fetchable — both compartment and AD are required for ListShapes. */
+    private fun selectAvailabilityDomain(availabilityDomain: String) {
+        _uiState.update { it.copy(context = it.context.copy(selectedAvailabilityDomain = availabilityDomain)) }
+        val client = requireClient() ?: return
+        val compartmentId = _uiState.value.context.selectedCompartmentOcid ?: return
+        viewModelScope.launch {
+            when (val result = OciContextDiscovery(client).fetchEligibleShapes(compartmentId, availabilityDomain)) {
+                is OciResult.Success -> _uiState.update { it.copy(discoveredShapes = result.data, error = null) }
+                is OciResult.Error -> _uiState.update { it.copy(error = result.error.whatHappened) }
+            }
+        }
+    }
+
+    /** Selecting a shape is also when compatible images become fetchable. */
+    private fun selectShape(shape: String) {
+        _uiState.update { it.copy(context = it.context.copy(selectedShapeName = shape)) }
+        val client = requireClient() ?: return
+        val compartmentId = _uiState.value.context.selectedCompartmentOcid ?: return
+        viewModelScope.launch {
+            when (val result = OciContextDiscovery(client).fetchImages(compartmentId, shape)) {
+                is OciResult.Success -> _uiState.update { it.copy(discoveredImages = result.data, error = null) }
+                is OciResult.Error -> _uiState.update { it.copy(error = result.error.whatHappened) }
+            }
+        }
+    }
+
+    /**
+     * Runs [OciProvisioner.provision] end to end (§18-24). Requires a fully
+     * resolved [OciProvisioningContext] and a VM SSH public key — the
+     * latter resolved from [OciOnboardingUiState.vmSshPublicKey] if present
+     * (same wizard run), or looked up from [keyRepository] via
+     * [OciProvisioningSession.sshKeyAlias] on resume (a new process, same
+     * session — §32).
+     */
+    private fun startProvisioning() {
+        val credentials = _uiState.value.credentials
+        val client = requireClient()
+        val context = _uiState.value.context
+        if (credentials == null || client == null) {
+            _uiState.update { it.copy(error = "No verified OCI connection yet.") }
+            return
+        }
+        viewModelScope.launch {
+            val sshPublicKey = _uiState.value.vmSshPublicKey
+                ?: session.sshKeyAlias?.toLongOrNull()?.let { keyRepository.getKeyById(it)?.publicKey }
+            if (sshPublicKey == null) {
+                _uiState.update { it.copy(error = "No VM SSH key yet — generate one first.") }
+                return@launch
+            }
+
+            _uiState.update { it.copy(isProvisioning = true, error = null) }
+            val provisioner = OciProvisioner(client)
+            val result = provisioner.provision(
+                session = session,
+                context = context,
+                sshPublicKey = sshPublicKey
+            ) { updated ->
+                session = updated
+                provisioningRepository.save(updated)
+                _uiState.update { it.copy(provisioningState = updated.state) }
+            }
+
+            when (result) {
+                is OciResult.Success -> {
+                    session = result.data
+                    _uiState.update {
+                        it.copy(
+                            isProvisioning = false,
+                            error = null,
+                            provisionedPublicIp = result.data.publicIp
+                        )
+                    }
+                    advanceTo(OciOnboardingStage.SSH_VERIFICATION)
+                }
+                is OciResult.Error -> {
+                    _uiState.update { it.copy(isProvisioning = false, error = result.error.whatHappened) }
+                    BinBoxLogger.e("OciOnboardingViewModel", "Provisioning failed: ${result.error.whatHappened}")
+                }
+            }
+        }
+    }
+
     private fun advanceTo(stage: OciOnboardingStage) {
         _stage.value = stage
     }
@@ -231,7 +394,14 @@ class OciOnboardingViewModel(
         OciProvisioningState.API_KEY_REGISTERED -> OciOnboardingStage.CONNECTION_VERIFICATION
         OciProvisioningState.AUTHENTICATION_VERIFIED -> OciOnboardingStage.OCI_CONTEXT_DISCOVERY
         OciProvisioningState.SSH_KEY_READY -> OciOnboardingStage.SSH_KEY_GENERATION
-        else -> OciOnboardingStage.OCI_CONTEXT_DISCOVERY // everything past this point is unbuilt (see kdoc)
+        OciProvisioningState.CONTEXT_DISCOVERED -> OciOnboardingStage.HOST_CONFIGURATION
+        OciProvisioningState.NETWORK_CREATING,
+        OciProvisioningState.NETWORK_READY -> OciOnboardingStage.NETWORK_PROVISIONING
+        OciProvisioningState.INSTANCE_CREATING,
+        OciProvisioningState.INSTANCE_PROVISIONING,
+        OciProvisioningState.INSTANCE_RUNNING -> OciOnboardingStage.INSTANCE_PROVISIONING
+        OciProvisioningState.PUBLIC_IP_DISCOVERED -> OciOnboardingStage.SSH_VERIFICATION
+        else -> OciOnboardingStage.OCI_CONTEXT_DISCOVERY // failure states and anything past SSH verification aren't wired into UI yet
     }
 }
 
@@ -242,6 +412,12 @@ sealed class OciOnboardingEvent {
     data class SubmitFingerprint(val fingerprint: String) : OciOnboardingEvent()
     data object VerifyConnection : OciOnboardingEvent()
     data object GenerateVmSshKey : OciOnboardingEvent()
+    data object DiscoverContext : OciOnboardingEvent()
+    data class SelectCompartment(val compartmentOcid: String) : OciOnboardingEvent()
+    data class SelectAvailabilityDomain(val availabilityDomain: String) : OciOnboardingEvent()
+    data class SelectShape(val shape: String) : OciOnboardingEvent()
+    data class SelectImage(val imageOcid: String) : OciOnboardingEvent()
+    data object StartProvisioning : OciOnboardingEvent()
     data object Cancel : OciOnboardingEvent()
 }
 
@@ -255,6 +431,15 @@ data class OciOnboardingUiState(
     val isVerifying: Boolean = false,
     val isGeneratingVmSshKey: Boolean = false,
     val vmSshPublicKey: String? = null,
+    val context: OciProvisioningContext = OciProvisioningContext(),
+    val isDiscovering: Boolean = false,
+    val discoveredCompartments: List<Compartment> = emptyList(),
+    val discoveredAvailabilityDomains: List<String> = emptyList(),
+    val discoveredShapes: List<String> = emptyList(),
+    val discoveredImages: List<Image> = emptyList(),
+    val isProvisioning: Boolean = false,
+    val provisioningState: OciProvisioningState? = null,
+    val provisionedPublicIp: String? = null,
     val error: String? = null
 )
 
