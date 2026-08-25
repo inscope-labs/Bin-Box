@@ -7,10 +7,12 @@ import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
 import com.inscopelabs.abx.binbox.core.result.AppResult
 import com.inscopelabs.abx.binbox.data.database.AppDatabase
 import com.inscopelabs.abx.binbox.data.repository.KeyRepositoryImpl
+import com.inscopelabs.abx.binbox.oci.api.OciClient
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentialsStore
 import com.inscopelabs.abx.binbox.oci.identity.OciFingerprint
 import com.inscopelabs.abx.binbox.oci.identity.OciKeyManager
+import com.inscopelabs.abx.binbox.oci.provisioning.OciApiErrorMapper
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningRepository
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningState
 import com.inscopelabs.abx.binbox.oci.provisioning.OciSshKeyProvisioner
@@ -26,16 +28,14 @@ import kotlinx.coroutines.launch
  * resumability).
  *
  * SCOPE OF THIS PHASE: stages through [OciOnboardingStage.CONNECTION_VERIFICATION]
- * are real — key generation, credential persistence, and the account-info
- * form are all backed by working code below. [generateVmSshKey] (§20) is
- * also real and independent of the API-dependent stages. Everything from
+ * are real — key generation, credential persistence, the account-info
+ * form, and now [verifyConnection] itself (a real GetUser call through
+ * [com.inscopelabs.abx.binbox.oci.api.OciClient]) are all backed by
+ * working code below. [generateVmSshKey] (§20) is also real and
+ * independent of the API-dependent stages. Everything from
  * [OciOnboardingStage.OCI_CONTEXT_DISCOVERY] through instance provisioning
- * (§15-26) requires the OCI Compute/Network/Identity REST APIs, which this
- * phase deliberately does not implement: those endpoints' exact request/
- * response shapes and pagination/versioning behavior aren't something to
- * guess at from a spec doc, and a wrong implementation here would be worse
- * than an honest gap. [verifyConnection] reports that plainly via UI state
- * rather than pretending to succeed or silently throwing.
+ * (§15-26 minus the pieces already covered by the `api/` package and
+ * [generateVmSshKey]) is not yet wired into this ViewModel.
  */
 class OciOnboardingViewModel(
     application: Application,
@@ -144,6 +144,13 @@ class OciOnboardingViewModel(
         }
     }
 
+    /**
+     * §14's "harmless authenticated OCI API request" — GetUser on the
+     * user's own OCID. Real as of this pass: builds an [OciClient] for
+     * [OciCredentials.region] and calls [com.inscopelabs.abx.binbox.oci.api.compartments.IdentityApi.getUser].
+     * A 401/403 here means auth is broken specifically — not networking,
+     * not compute, not SSH (§14's required distinction).
+     */
     private fun verifyConnection() {
         val credentials = _uiState.value.credentials
         if (credentials == null) {
@@ -152,16 +159,21 @@ class OciOnboardingViewModel(
         }
         viewModelScope.launch {
             _uiState.update { it.copy(isVerifying = true, error = null) }
-            // TODO(oci-api-phase-b): call a harmless authenticated OCI request
-            // (§14 — e.g. GET /identity/20160918/users/{userOcid}) via the
-            // not-yet-built api/OciClient, using OciRequestSigner for the
-            // Authorization header. Left unimplemented pending that client
-            // — see class kdoc.
-            _uiState.update {
-                it.copy(
-                    isVerifying = false,
-                    error = "Connection verification requires the OCI API client (not yet built in this phase)."
-                )
+            try {
+                val client = OciClient(credentials.region) { _uiState.value.credentials }
+                val response = client.identityApi.getUser(credentials.userOcid)
+                if (response.isSuccessful) {
+                    _uiState.update { it.copy(isVerifying = false, error = null) }
+                    persistSessionState(OciProvisioningState.AUTHENTICATION_VERIFIED)
+                } else {
+                    val apiError = OciApiErrorMapper.fromErrorResponse(response)
+                    _uiState.update { it.copy(isVerifying = false, error = apiError.whatHappened) }
+                    session = session.fail(apiError, OciProvisioningState.AUTH_FAILED)
+                    provisioningRepository.save(session)
+                }
+            } catch (e: Exception) {
+                BinBoxLogger.e("OciOnboardingViewModel", "Connection verification failed", e)
+                _uiState.update { it.copy(isVerifying = false, error = "Couldn't reach OCI — check your network connection.") }
             }
         }
     }
