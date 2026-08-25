@@ -5,12 +5,15 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
 import com.inscopelabs.abx.binbox.core.result.AppResult
+import com.inscopelabs.abx.binbox.data.database.AppDatabase
+import com.inscopelabs.abx.binbox.data.repository.KeyRepositoryImpl
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentialsStore
 import com.inscopelabs.abx.binbox.oci.identity.OciFingerprint
 import com.inscopelabs.abx.binbox.oci.identity.OciKeyManager
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningRepository
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningState
+import com.inscopelabs.abx.binbox.oci.provisioning.OciSshKeyProvisioner
 import com.inscopelabs.abx.binbox.security.SecureStorageService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,14 +27,15 @@ import kotlinx.coroutines.launch
  *
  * SCOPE OF THIS PHASE: stages through [OciOnboardingStage.CONNECTION_VERIFICATION]
  * are real — key generation, credential persistence, and the account-info
- * form are all backed by working code below. [OciOnboardingStage.OCI_CONTEXT_DISCOVERY]
- * onward requires the OCI Compute/Network/Identity REST APIs (§15-26),
- * which this phase deliberately does not implement: those endpoints' exact
- * request/response shapes and pagination/versioning behavior aren't
- * something to guess at from a spec doc, and a wrong implementation here
- * would be worse than an honest "not yet built." [advanceContextDiscovery]
- * and everything after it throw [NotImplementedError] until that API
- * client exists as a follow-up phase.
+ * form are all backed by working code below. [generateVmSshKey] (§20) is
+ * also real and independent of the API-dependent stages. Everything from
+ * [OciOnboardingStage.OCI_CONTEXT_DISCOVERY] through instance provisioning
+ * (§15-26) requires the OCI Compute/Network/Identity REST APIs, which this
+ * phase deliberately does not implement: those endpoints' exact request/
+ * response shapes and pagination/versioning behavior aren't something to
+ * guess at from a spec doc, and a wrong implementation here would be worse
+ * than an honest gap. [verifyConnection] reports that plainly via UI state
+ * rather than pretending to succeed or silently throwing.
  */
 class OciOnboardingViewModel(
     application: Application,
@@ -40,6 +44,9 @@ class OciOnboardingViewModel(
 
     private val credentialsStore = OciCredentialsStore(application, secureStorage)
     private val provisioningRepository = OciProvisioningRepository(application)
+    private val sshKeyProvisioner = OciSshKeyProvisioner(
+        KeyRepositoryImpl(AppDatabase.getInstance(application).keyDao(), secureStorage)
+    )
 
     private val _stage = MutableStateFlow(OciOnboardingStage.WELCOME)
     val stage: StateFlow<OciOnboardingStage> = _stage.asStateFlow()
@@ -80,6 +87,8 @@ class OciOnboardingViewModel(
             is OciOnboardingEvent.SubmitFingerprint -> submitFingerprint(event.fingerprint)
 
             is OciOnboardingEvent.VerifyConnection -> verifyConnection()
+
+            OciOnboardingEvent.GenerateVmSshKey -> generateVmSshKey()
 
             OciOnboardingEvent.Cancel -> {
                 persistSessionState(OciProvisioningState.CANCELLED)
@@ -157,6 +166,43 @@ class OciOnboardingViewModel(
         }
     }
 
+    /**
+     * Generates the VM's SSH key pair (§20). Real — see [OciSshKeyProvisioner] —
+     * unlike [verifyConnection] and everything reachable after it, which
+     * depend on the not-yet-built OCI API client. Callable independently of
+     * wizard position for now; the wizard doesn't yet reach
+     * [OciOnboardingStage.SSH_KEY_GENERATION] in its normal sequence since
+     * the stages between here and there aren't built.
+     */
+    private fun generateVmSshKey() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGeneratingVmSshKey = true, error = null) }
+            when (val result = sshKeyProvisioner.generateForSession(session.sessionId)) {
+                is AppResult.Success -> {
+                    val key = result.data
+                    session = session.copy(
+                        sshKeyAlias = key.id.toString(),
+                        updatedAtMillis = System.currentTimeMillis()
+                    )
+                    provisioningRepository.save(session)
+                    _uiState.update {
+                        it.copy(
+                            isGeneratingVmSshKey = false,
+                            vmSshPublicKey = key.publicKey,
+                            error = null
+                        )
+                    }
+                    persistSessionState(OciProvisioningState.SSH_KEY_READY)
+                }
+                is AppResult.Error -> {
+                    _uiState.update { it.copy(isGeneratingVmSshKey = false, error = result.error.userMessage) }
+                    BinBoxLogger.e("OciOnboardingViewModel", "VM SSH key generation failed: ${result.error.userMessage}")
+                }
+                AppResult.Loading -> Unit
+            }
+        }
+    }
+
     private fun advanceTo(stage: OciOnboardingStage) {
         _stage.value = stage
     }
@@ -172,6 +218,7 @@ class OciOnboardingViewModel(
         OciProvisioningState.API_KEY_REQUIRED -> OciOnboardingStage.API_KEY_REGISTRATION
         OciProvisioningState.API_KEY_REGISTERED -> OciOnboardingStage.CONNECTION_VERIFICATION
         OciProvisioningState.AUTHENTICATION_VERIFIED -> OciOnboardingStage.OCI_CONTEXT_DISCOVERY
+        OciProvisioningState.SSH_KEY_READY -> OciOnboardingStage.SSH_KEY_GENERATION
         else -> OciOnboardingStage.OCI_CONTEXT_DISCOVERY // everything past this point is unbuilt (see kdoc)
     }
 }
@@ -182,6 +229,7 @@ sealed class OciOnboardingEvent {
     data object GenerateApiKey : OciOnboardingEvent()
     data class SubmitFingerprint(val fingerprint: String) : OciOnboardingEvent()
     data object VerifyConnection : OciOnboardingEvent()
+    data object GenerateVmSshKey : OciOnboardingEvent()
     data object Cancel : OciOnboardingEvent()
 }
 
@@ -193,6 +241,8 @@ data class OciOnboardingUiState(
     val publicKeyPem: String? = null,
     val credentials: OciCredentials? = null,
     val isVerifying: Boolean = false,
+    val isGeneratingVmSshKey: Boolean = false,
+    val vmSshPublicKey: String? = null,
     val error: String? = null
 )
 

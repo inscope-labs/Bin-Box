@@ -16,10 +16,14 @@ NOT cover the OCI Compute/Network/Identity API client — see "Deferred" below.
 - `auth/` — `OciRequestSigner`, `OciSignatureHeaders`
 - `provisioning/` — `OciProvisioningState` (§31 state machine),
   `OciErrorCategory`/`OciProvisioningError` (§33), `OciProvisioningContext`,
-  `OciProvisioningSession`, `OciProvisioningRepository`
+  `OciProvisioningSession`, `OciProvisioningRepository`,
+  `OciSshKeyProvisioner` (§20 — VM SSH key generation, added in a follow-up
+  pass; reuses the existing `IKeyRepository`/`KeyRepositoryImpl` rather than
+  a new store, since that's already encrypted-at-rest from Phase 9)
 - `terminal/` — `ShellHost` (interface), `OciShellHost`
-- `wizard/` — `OciOnboardingStage` (§9), `OciOnboardingViewModel` (working
-  through `CONNECTION_VERIFICATION`, stubbed after)
+- `wizard/` — `OciOnboardingStage` (§9), `OciOnboardingViewModel` — real
+  through `CONNECTION_VERIFICATION`, plus real (order-independent)
+  `GenerateVmSshKey` handling; everything else stubbed
 
 Also: added `AppError.AuthError.OciAuthenticationFailed` variant to the
 existing error taxonomy in `core/error/AppError.kt` (small, additive change
@@ -54,6 +58,27 @@ to a non-protected file).
    Single active OCI profile, not a relational record — didn't seem to
    warrant a schema migration yet. §7's "support multiple future OCI
    profiles" is an explicit follow-up, not silently dropped.
+
+4. **`OciProvisioningSession.sshKeyAlias` holds two different kinds of
+   reference depending on which key it's pointing at, by necessity.** The
+   OCI API signing key (§8) never needs raw bytes and lives in
+   AndroidKeyStore, referenced by string alias. The VM SSH key (§20) must
+   hand JSch raw PEM, so it's stored the same way every other SSH host key
+   in this app is — an encrypted `IKeyRepository` row, referenced by `Long`
+   id. `sshKeyAlias` stores that id stringified. Documented inline in
+   `OciSshKeyProvisioner`, but worth a second look before this gets
+   consumed elsewhere — the field name implies one storage scheme when two
+   exist.
+
+## Correction from the initial pass
+
+The first version of `OciOnboardingViewModel`'s class kdoc referenced a
+function, `advanceContextDiscovery`, that was never actually written, and
+described `verifyConnection()`'s not-yet-built path as throwing
+`NotImplementedError` when it actually reports the gap through UI state.
+Caught and fixed on a second read before this report was finalized — noting
+it here since it's the kind of drift worth watching for in doc comments
+written alongside fast-moving stubs.
 
 ## Deferred — not built in this phase
 
