@@ -22,3 +22,10 @@ data class OciUser(
     val name: String,
     val lifecycleState: String
 )
+
+/** Confirmed field-for-field against Oracle's ListAvailabilityDomains schema. */
+data class AvailabilityDomain(
+    val compartmentId: String,
+    val id: String,
+    val name: String
+)

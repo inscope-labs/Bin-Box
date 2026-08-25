@@ -37,4 +37,14 @@ interface IdentityApi {
      */
     @GET("20160918/users/{userId}")
     suspend fun getUser(@Path("userId") userId: String): Response<OciUser>
+
+    /**
+     * ListAvailabilityDomains. Confirmed response shape:
+     * `[{compartmentId, id, name}]` — required for §17's AD selection
+     * before capacity-checking or launching an instance.
+     */
+    @GET("20160918/availabilityDomains")
+    suspend fun listAvailabilityDomains(
+        @Query("compartmentId") compartmentId: String
+    ): Response<List<AvailabilityDomain>>
 }
