@@ -50,6 +50,8 @@ sealed class AppError(
             AuthError("Biometric authentication failed: $reason")
         data object UserCancelledAuth :
             AuthError("Authentication was cancelled by the user.")
+        data class OciAuthenticationFailed(val detail: String, override val cause: Throwable? = null) :
+            AuthError("OCI authentication failed: $detail", cause)
 
         companion object {
             operator fun invoke(userMessage: String, cause: Throwable? = null): AuthError =
