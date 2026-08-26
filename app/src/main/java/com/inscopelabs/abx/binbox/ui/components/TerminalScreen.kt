@@ -45,6 +45,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.inscopelabs.abx.binbox.oci.wizard.LocalOciWizardLauncher
+import com.inscopelabs.abx.binbox.oci.wizard.OciFreeTierPromoCard
 import com.inscopelabs.abx.binbox.terminal.engine.TerminalKey
 import com.inscopelabs.abx.binbox.terminal.model.*
 import com.inscopelabs.abx.binbox.ui.theme.*
@@ -84,6 +86,7 @@ fun TerminalScreen(
     var isCaseSensitive by remember { mutableStateOf(false) }
     var isRegexMode by remember { mutableStateOf(false) }
     var showWorkspaceDropdown by remember { mutableStateOf(false) }
+    val ociLauncher = LocalOciWizardLauncher.current
 
     // Session lines observation
     val sessionLines by (activeSession?.lines?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(emptyList()) })
@@ -412,6 +415,20 @@ fun TerminalScreen(
                             onClick = {
                                 showAddMenu = false
                                 viewModel.openDemoSession()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Oracle Cloud VM", color = ImmersiveTextPrimary)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Free ARM", color = CyanAccent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            leadingIcon = { Icon(Icons.Default.CloudQueue, null, tint = CyanGlow) },
+                            onClick = {
+                                showAddMenu = false
+                                ociLauncher()
                             }
                         )
                         DropdownMenuItem(
@@ -822,6 +839,12 @@ fun TerminalScreen(
                             Text("Local Shell")
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+                    OciFreeTierPromoCard(
+                        onLaunchWizard = { ociLauncher() },
+                        modifier = Modifier.fillMaxWidth(0.95f)
+                    )
                 }
             } else {
                 SelectionContainer {

@@ -23,6 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.inscopelabs.abx.binbox.oci.wizard.LocalOciWizardLauncher
+import com.inscopelabs.abx.binbox.oci.wizard.OciFreeTierPromoCard
 import com.inscopelabs.abx.binbox.terminal.model.CursorStyle
 import com.inscopelabs.abx.binbox.terminal.model.TerminalThemePreset
 import com.inscopelabs.abx.binbox.terminal.model.TerminalThemes
@@ -38,6 +40,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val strings = LocalAppStrings.current
+    val ociLauncher = LocalOciWizardLauncher.current
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val currentTheme by viewModel.currentTheme.collectAsStateWithLifecycle()
     val fontSizeSp by viewModel.fontSizeSp.collectAsStateWithLifecycle()
@@ -474,7 +477,25 @@ fun SettingsScreen(
             }
 
             // ----------------------------------------------------
-            // 6. Local System & Shell Engine Telemetry
+            // 6. Cloud Infrastructure & Hosting (OCI)
+            // ----------------------------------------------------
+            item {
+                Column {
+                    Text(
+                        text = "Cloud Infrastructure & Hosting",
+                        color = ImmersiveTextPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    OciFreeTierPromoCard(
+                        onLaunchWizard = { ociLauncher() }
+                    )
+                }
+            }
+
+            // ----------------------------------------------------
+            // 7. Local System & Shell Engine Telemetry
             // ----------------------------------------------------
             item {
                 Card(

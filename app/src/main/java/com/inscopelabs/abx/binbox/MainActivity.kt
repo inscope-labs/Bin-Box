@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.inscopelabs.abx.binbox.oci.wizard.LocalOciWizardLauncher
+import com.inscopelabs.abx.binbox.oci.wizard.OciOnboardingScreen
 import com.inscopelabs.abx.binbox.ui.components.*
 import com.inscopelabs.abx.binbox.ui.i18n.LocalAppStrings
 import com.inscopelabs.abx.binbox.ui.theme.*
@@ -37,10 +39,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: BinBoxViewModel = viewModel()
             val strings by viewModel.strings.collectAsStateWithLifecycle()
+            var showOciWizard by remember { mutableStateOf(false) }
 
-            CompositionLocalProvider(LocalAppStrings provides strings) {
+            CompositionLocalProvider(
+                LocalAppStrings provides strings,
+                LocalOciWizardLauncher provides { showOciWizard = true }
+            ) {
                 BinBoxTheme {
-                    BinBoxApp(viewModel = viewModel)
+                    BinBoxApp(
+                        viewModel = viewModel,
+                        showOciWizard = showOciWizard,
+                        onSetShowOciWizard = { showOciWizard = it }
+                    )
                 }
             }
         }
@@ -50,7 +60,9 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BinBoxApp(
-    viewModel: BinBoxViewModel = viewModel()
+    viewModel: BinBoxViewModel = viewModel(),
+    showOciWizard: Boolean = false,
+    onSetShowOciWizard: (Boolean) -> Unit = {}
 ) {
     val strings = LocalAppStrings.current
     val currentTab by viewModel.currentAppTab.collectAsStateWithLifecycle()
@@ -343,5 +355,18 @@ fun BinBoxApp(
                 viewModel.executeSnippet(snippet, resolvedCmd)
             }
         )
+    }
+
+    // Oracle Cloud Provisioning Wizard Modal
+    if (showOciWizard) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { onSetShowOciWizard(false) },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            OciOnboardingScreen(
+                onDismiss = { onSetShowOciWizard(false) },
+                onShellReady = { onSetShowOciWizard(false) }
+            )
+        }
     }
 }

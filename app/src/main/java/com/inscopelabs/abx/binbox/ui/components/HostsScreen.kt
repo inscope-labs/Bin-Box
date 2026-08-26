@@ -80,14 +80,14 @@ fun HostsScreen(
         containerColor = Slate950,
         floatingActionButton = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SmallFloatingActionButton(
+                ExtendedFloatingActionButton(
                     onClick = { showOciWizard = true },
                     containerColor = Slate800,
                     contentColor = CyanGlow,
+                    icon = { Icon(Icons.Default.Cloud, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                    text = { Text("Free Oracle VM", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                     modifier = Modifier.testTag("add_oci_host_fab")
-                ) {
-                    Icon(Icons.Default.Cloud, contentDescription = "Provision on Oracle Cloud")
-                }
+                )
                 FloatingActionButton(
                     onClick = {
                         hostToEdit = null
@@ -294,22 +294,28 @@ fun HostsScreen(
 
             // Hosts List
             if (filteredHosts.isEmpty()) {
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
+                        .weight(1f)
+                        .padding(vertical = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.Dns,
-                            contentDescription = null,
-                            tint = Slate600,
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("No host connections match your filter", color = Slate400, fontSize = 13.sp)
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Dns,
+                        contentDescription = null,
+                        tint = Slate600,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("No host connections match your filter", color = Slate400, fontSize = 13.sp)
+
+                    Spacer(modifier = Modifier.height(24.dp))
+                    com.inscopelabs.abx.binbox.oci.wizard.OciFreeTierPromoCard(
+                        onLaunchWizard = { showOciWizard = true },
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
                 }
             } else {
                 LazyColumn(
@@ -343,6 +349,10 @@ fun HostsScreen(
             onSave = { host ->
                 viewModel.saveHost(host)
                 showAddEditDialog = false
+            },
+            onLaunchOciWizard = {
+                showAddEditDialog = false
+                showOciWizard = true
             }
         )
     }
@@ -683,7 +693,8 @@ fun AddEditHostDialog(
     initialHost: HostEntity?,
     savedKeys: List<com.inscopelabs.abx.binbox.data.entity.KeyEntity>,
     onDismiss: () -> Unit,
-    onSave: (HostEntity) -> Unit
+    onSave: (HostEntity) -> Unit,
+    onLaunchOciWizard: (() -> Unit)? = null
 ) {
     var label by remember { mutableStateOf(initialHost?.label ?: "") }
     var host by remember { mutableStateOf(initialHost?.host ?: "") }
@@ -718,6 +729,25 @@ fun AddEditHostDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Oracle Cloud Quick Action (when creating new host)
+                if (initialHost == null && onLaunchOciWizard != null) {
+                    item {
+                        com.inscopelabs.abx.binbox.oci.wizard.OciQuickActionTile(
+                            onLaunchWizard = onLaunchOciWizard
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            HorizontalDivider(modifier = Modifier.weight(1f), color = ImmersiveBorderVerySubtle)
+                            Text("OR MANUAL SETUP", color = ImmersiveTextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            HorizontalDivider(modifier = Modifier.weight(1f), color = ImmersiveBorderVerySubtle)
+                        }
+                    }
+                }
+
                 // Protocol Selector
                 item {
                     Text("Protocol", color = ImmersiveTextSecondary, fontSize = 12.sp)
