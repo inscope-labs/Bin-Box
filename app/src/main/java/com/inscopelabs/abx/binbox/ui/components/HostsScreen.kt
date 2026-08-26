@@ -29,7 +29,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.inscopelabs.abx.binbox.data.entity.HostEntity
+import com.inscopelabs.abx.binbox.oci.wizard.OciOnboardingScreen
 import com.inscopelabs.abx.binbox.terminal.model.ProtocolType
 import com.inscopelabs.abx.binbox.terminal.model.TerminalThemes
 import com.inscopelabs.abx.binbox.ui.theme.*
@@ -53,6 +56,7 @@ fun HostsScreen(
     var showAddEditDialog by remember { mutableStateOf(false) }
     var hostToEdit by remember { mutableStateOf<HostEntity?>(null) }
     var showQuickConnect by remember { mutableStateOf(false) }
+    var showOciWizard by remember { mutableStateOf(false) }
 
     val groupTags = listOf("All", "Favorites", "Workspace (${activeWorkspace.name})", "Cloud", "HomeLab", "Production", "Local", "IoT")
 
@@ -75,16 +79,26 @@ fun HostsScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = Slate950,
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    hostToEdit = null
-                    showAddEditDialog = true
-                },
-                containerColor = CyanAccent,
-                contentColor = Slate950,
-                modifier = Modifier.testTag("add_host_fab")
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add host")
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SmallFloatingActionButton(
+                    onClick = { showOciWizard = true },
+                    containerColor = Slate800,
+                    contentColor = CyanGlow,
+                    modifier = Modifier.testTag("add_oci_host_fab")
+                ) {
+                    Icon(Icons.Default.Cloud, contentDescription = "Provision on Oracle Cloud")
+                }
+                FloatingActionButton(
+                    onClick = {
+                        hostToEdit = null
+                        showAddEditDialog = true
+                    },
+                    containerColor = CyanAccent,
+                    contentColor = Slate950,
+                    modifier = Modifier.testTag("add_host_fab")
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add host")
+                }
             }
         }
     ) { innerPadding ->
@@ -331,6 +345,21 @@ fun HostsScreen(
                 showAddEditDialog = false
             }
         )
+    }
+
+    // Oracle Cloud provisioning wizard — full screen, self-contained (its own
+    // ViewModel writes directly to the host repository this screen's `hosts`
+    // flow already reads from, so the new host just appears on completion).
+    if (showOciWizard) {
+        Dialog(
+            onDismissRequest = { showOciWizard = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            OciOnboardingScreen(
+                onDismiss = { showOciWizard = false },
+                onShellReady = { showOciWizard = false }
+            )
+        }
     }
 }
 
