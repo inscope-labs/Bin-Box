@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
+        android:name=".BinBoxApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -26,6 +27,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".core.diagnostics.CrashActivity"
+            android:exported="false"
+            android:label="Crash Report"
+            android:theme="@style/Theme.MyApplication" />
+
+        <activity
+            android:name=".core.diagnostics.UserFacingErrorActivity"
+            android:exported="false"
+            android:label="Error"
+            android:theme="@style/Theme.MyApplication" />
     </application>
 
 </manifest>

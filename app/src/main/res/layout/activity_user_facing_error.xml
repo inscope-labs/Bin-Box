@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#020617"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Something Went Wrong"
+        android:textColor="#F8FAFC"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:gravity="center"
+        android:text="BinBox encountered an unexpected error and needs to restart. A diagnostic report has been recorded safely."
+        android:textColor="#94A3B8"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/tvReferenceCode"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:background="#0F172A"
+        android:fontFamily="monospace"
+        android:padding="12dp"
+        android:textColor="#38BDF8"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <Space
+        android:layout_width="match_parent"
+        android:layout_height="32dp" />
+
+    <Button
+        android:id="@+id/btnErrorRestart"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:backgroundTint="#06B6D4"
+        android:text="Restart Application"
+        android:textColor="#020617" />
+
+    <Button
+        android:id="@+id/btnErrorShare"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginTop="12dp"
+        android:backgroundTint="#1E293B"
+        android:text="Share Diagnostic Log"
+        android:textColor="#F8FAFC" />
+</LinearLayout>
