@@ -440,6 +440,13 @@ class OciOnboardingViewModel(
                 _uiState.update { it.copy(error = "Instance provisioned, but couldn't add it as a host: ${result.error.userMessage}") }
                 BinBoxLogger.e("OciOnboardingViewModel", "Host registration failed: ${result.error.userMessage}")
             }
+            is AppResult.Loading -> {
+                // hostRegistrar.register() is a single suspend call that only ever
+                // returns Success/Error — Loading is unreachable here, but AppResult
+                // is a 3-case sealed type everywhere else it's used, so this branch
+                // exists to keep the when exhaustive rather than an `else` that would
+                // silently swallow a real future case.
+            }
         }
     }
 

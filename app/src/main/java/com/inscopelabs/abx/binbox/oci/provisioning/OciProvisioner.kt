@@ -63,7 +63,7 @@ class OciProvisioner(private val client: OciClient) {
         }
 
         current = current.copy(
-            vcnId = network.vcnId,
+            vcnOcid = network.vcnId,
             internetGatewayOcid = network.internetGatewayId,
             subnetOcid = network.subnetId
         ).advance(OciProvisioningState.NETWORK_READY)
