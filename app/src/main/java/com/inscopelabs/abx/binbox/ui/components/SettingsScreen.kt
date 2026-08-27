@@ -18,11 +18,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.inscopelabs.abx.binbox.core.diagnostics.CrashReporterManager
+import com.inscopelabs.abx.binbox.core.diagnostics.DiagnosticPreferences
+import com.inscopelabs.abx.binbox.core.featureflags.BetaEnrollment
+import com.inscopelabs.abx.binbox.core.featureflags.Feature
+import com.inscopelabs.abx.binbox.core.featureflags.FeatureFlags
 import com.inscopelabs.abx.binbox.oci.wizard.LocalOciWizardLauncher
 import com.inscopelabs.abx.binbox.oci.wizard.OciFreeTierPromoCard
 import com.inscopelabs.abx.binbox.terminal.model.CursorStyle
@@ -40,12 +46,15 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val strings = LocalAppStrings.current
+    val context = LocalContext.current
     val ociLauncher = LocalOciWizardLauncher.current
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val currentTheme by viewModel.currentTheme.collectAsStateWithLifecycle()
     val fontSizeSp by viewModel.fontSizeSp.collectAsStateWithLifecycle()
     val cursorStyle by viewModel.cursorStyle.collectAsStateWithLifecycle()
     val hapticFeedbackEnabled by viewModel.hapticFeedbackEnabled.collectAsStateWithLifecycle()
+    var betaEnrolled by remember { mutableStateOf(BetaEnrollment.isEnrolled(context)) }
+    var remoteReportingEnabled by remember { mutableStateOf(DiagnosticPreferences.isRemoteReportingEnabled(context)) }
 
     val allThemes = listOf(
         TerminalThemes.MonokaiPro,
@@ -491,6 +500,108 @@ fun SettingsScreen(
                     OciFreeTierPromoCard(
                         onLaunchWizard = { ociLauncher() }
                     )
+                }
+            }
+
+            // ----------------------------------------------------
+            // 6b. Beta Testing
+            // ----------------------------------------------------
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = ImmersiveSurface),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, ImmersiveBorderVerySubtle)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(ImmersivePrimary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Science, null, tint = ImmersivePrimary, modifier = Modifier.size(18.dp))
+                            }
+                            Text("Beta Testing", color = ImmersiveTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Opt in to try features still being proven out before they graduate to the stable release. You can turn this off at any time.",
+                            color = ImmersiveTextPrimary.copy(alpha = 0.6f),
+                            fontSize = 12.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Enrolled in Beta", color = ImmersiveTextPrimary, fontSize = 13.sp)
+                            Switch(
+                                checked = betaEnrolled,
+                                onCheckedChange = { enabled ->
+                                    betaEnrolled = enabled
+                                    BetaEnrollment.setEnrolled(context, enabled)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ----------------------------------------------------
+            // 6c. Diagnostics & Telemetry (gated: Feature.DIAGNOSTICS_INSPECTOR)
+            // ----------------------------------------------------
+            if (FeatureFlags.isEnabled(Feature.DIAGNOSTICS_INSPECTOR, betaEnrolled)) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = ImmersiveSurface),
+                        shape = RoundedCornerShape(16.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, ImmersiveBorderVerySubtle)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(ImmersivePrimary.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.BugReport, null, tint = ImmersivePrimary, modifier = Modifier.size(18.dp))
+                                }
+                                Text("Diagnostics & Telemetry", color = ImmersiveTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "Share crash reports to help find and fix issues faster. Off by default; nothing is sent unless you enable this.",
+                                color = ImmersiveTextPrimary.copy(alpha = 0.6f),
+                                fontSize = 12.sp
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Share Crash Reports", color = ImmersiveTextPrimary, fontSize = 13.sp)
+                                Switch(
+                                    checked = remoteReportingEnabled,
+                                    onCheckedChange = { enabled ->
+                                        remoteReportingEnabled = enabled
+                                        CrashReporterManager.updateReportingPreference(context, enabled)
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
