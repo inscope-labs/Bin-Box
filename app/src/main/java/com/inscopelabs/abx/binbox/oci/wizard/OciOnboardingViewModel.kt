@@ -54,7 +54,7 @@ import kotlinx.coroutines.launch
  * immediately after public IP discovery without first confirming the
  * instance is actually SSH-reachable (see that function's kdoc).
  */
-class OciOnboardingViewModel(
+class OciOnboardingViewModel @JvmOverloads constructor(
     application: Application,
     private val secureStorage: SecureStorageService = SecureStorageService(application)
 ) : AndroidViewModel(application) {

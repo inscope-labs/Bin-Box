@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Properties
 
 plugins {
   alias(libs.plugins.android.application)
@@ -9,6 +10,23 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
+val versionPropsFile = rootProject.file("version.properties")
+val versionProps = Properties().apply {
+  if (versionPropsFile.exists()) {
+    versionPropsFile.inputStream().use { load(it) }
+  }
+}
+
+val propVersionCode = versionProps.getProperty("versionCode")?.trim()?.toIntOrNull() ?: 1
+val propVersionName = versionProps.getProperty("versionName")?.trim() ?: "1.0"
+val propDebugCode = versionProps.getProperty("debugCode")?.trim()
+
+val resolvedVersionCode = (project.findProperty("versionCode") as? String)?.trim()?.toIntOrNull()
+  ?: propVersionCode
+
+val resolvedVersionName = (project.findProperty("versionName") as? String)?.trim()
+  ?: if (!propDebugCode.isNullOrEmpty()) "$propVersionName.$propDebugCode" else propVersionName
+
 android {
   namespace = "com.inscopelabs.abx.binbox"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
@@ -17,8 +35,8 @@ android {
     applicationId = "com.inscopelabs.abx.binbox"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = resolvedVersionCode
+    versionName = resolvedVersionName
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
