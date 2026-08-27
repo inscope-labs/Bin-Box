@@ -1,0 +1,99 @@
+package com.inscopelabs.abx.binbox.oci.wizard
+
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+
+/**
+ * Rich diagnostic context collected during OCI connection verification and API calls.
+ * Provides user and support visibility into exact URLs, parameters, HTTP status, and actionable fixes.
+ */
+data class OciVerificationDiagnostics(
+    val endpointUrl: String,
+    val httpMethod: String = "GET",
+    val region: String,
+    val tenancyOcid: String,
+    val userOcid: String,
+    val fingerprint: String,
+    val keyAlias: String? = null,
+    val httpStatusCode: Int? = null,
+    val ociErrorCode: String? = null,
+    val ociErrorMessage: String? = null,
+    val exceptionClass: String? = null,
+    val rawExceptionMessage: String? = null,
+    val opcRequestId: String? = null,
+    val timestampMillis: Long = System.currentTimeMillis()
+) {
+    val isNetworkOrDnsError: Boolean
+        get() = exceptionClass?.contains("UnknownHost", ignoreCase = true) == true ||
+            rawExceptionMessage?.contains("Unable to resolve host", ignoreCase = true) == true
+
+    val isAuthError: Boolean
+        get() = httpStatusCode == 401 ||
+            ociErrorCode?.contains("NotAuthenticated", ignoreCase = true) == true ||
+            rawExceptionMessage?.contains("signing", ignoreCase = true) == true
+
+    val isPermissionError: Boolean
+        get() = httpStatusCode == 403 ||
+            ociErrorCode?.contains("NotAuthorized", ignoreCase = true) == true
+
+    val isNotFoundError: Boolean
+        get() = httpStatusCode == 404 ||
+            ociErrorCode?.contains("NotFound", ignoreCase = true) == true
+
+    fun getTroubleshootingSuggestions(): List<String> {
+        val list = mutableListOf<String>()
+        when {
+            isNetworkOrDnsError -> {
+                list.add("DNS/Network resolution failed for region '$region'. Check that the region code is valid (e.g. sa-saopaulo-1).")
+                list.add("Verify device internet connectivity or VPN/proxy settings.")
+            }
+            isAuthError -> {
+                list.add("Ensure the public API key generated in Bin Box was uploaded to this exact User OCID in OCI Console (Profile → API keys → Add API key).")
+                list.add("Verify that the fingerprint in Bin Box ('$fingerprint') matches the fingerprint shown in Oracle Cloud Console.")
+                list.add("Check that the user is active in the tenancy and not locked or deleted.")
+            }
+            isPermissionError -> {
+                list.add("Your OCI user account might lack IAM policy permissions (e.g. inspect/read users or compartments).")
+                list.add("If using an Identity Domain, ensure your group has administrative or provisioning policies.")
+            }
+            isNotFoundError -> {
+                list.add("The User OCID was not found in region '$region' or tenancy. Verify you copied the exact User OCID from Profile → My profile.")
+            }
+            httpStatusCode in 500..599 -> {
+                list.add("Oracle Cloud returned an internal server error (HTTP $httpStatusCode). Retry in a few moments.")
+            }
+            else -> {
+                list.add("Verify that Tenancy OCID, User OCID, Region, and Fingerprint match your Oracle Cloud console credentials.")
+            }
+        }
+        return list
+    }
+
+    fun toFormattedReport(): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss 'UTC'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        return buildString {
+            appendLine("=== OCI Connection Diagnostics ===")
+            appendLine("Timestamp: ${sdf.format(Date(timestampMillis))}")
+            appendLine("Endpoint: $httpMethod $endpointUrl")
+            appendLine("Region: $region")
+            appendLine("Tenancy OCID: $tenancyOcid")
+            appendLine("User OCID: $userOcid")
+            appendLine("Fingerprint: $fingerprint")
+            if (keyAlias != null) appendLine("Signing Key Alias: $keyAlias")
+            if (httpStatusCode != null) appendLine("HTTP Status: $httpStatusCode")
+            if (opcRequestId != null) appendLine("OPC Request ID: $opcRequestId")
+            if (ociErrorCode != null) appendLine("OCI Error Code: $ociErrorCode")
+            if (ociErrorMessage != null) appendLine("OCI Error Message: $ociErrorMessage")
+            if (exceptionClass != null) appendLine("Exception: $exceptionClass")
+            if (rawExceptionMessage != null) appendLine("Details: $rawExceptionMessage")
+            appendLine("\n--- Troubleshooting Guidance ---")
+            getTroubleshootingSuggestions().forEachIndexed { idx, item ->
+                appendLine("${idx + 1}. $item")
+            }
+        }
+    }
+}
