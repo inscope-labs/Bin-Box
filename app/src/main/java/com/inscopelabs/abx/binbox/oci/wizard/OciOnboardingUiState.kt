@@ -24,6 +24,10 @@ sealed class OciOnboardingEvent {
     data object StartOver : OciOnboardingEvent()
     data object EditAccountInfo : OciOnboardingEvent()
     data object Cancel : OciOnboardingEvent()
+    /** User confirmed "Public key generated" step manually (back-navigation re-entry; see ApiKeyGenerationStage). */
+    data object ContinueToKeyRegistration : OciOnboardingEvent()
+    /** User chose to resume a persisted in-progress session found on launch. */
+    data object ResumeSession : OciOnboardingEvent()
 }
 
 data class OciOnboardingUiState(
@@ -47,5 +51,8 @@ data class OciOnboardingUiState(
     val provisioningState: OciProvisioningState? = null,
     val provisionedPublicIp: String? = null,
     val error: String? = null,
-    val diagnostics: OciVerificationDiagnostics? = null
+    val diagnostics: OciVerificationDiagnostics? = null,
+    /** Non-null on launch when a persisted, in-progress session was found — drives the resume-or-start-over prompt. */
+    val pendingResumeStage: OciOnboardingStage? = null,
+    val isResuming: Boolean = false
 )

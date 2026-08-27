@@ -160,7 +160,8 @@ fun OciOnboardingScreen(
                         OciOnboardingStage.API_KEY_GENERATION -> ApiKeyGenerationStage(
                             publicKeyPem = uiState.publicKeyPem,
                             error = uiState.error,
-                            onGenerate = { viewModel.onEvent(OciOnboardingEvent.GenerateApiKey) }
+                            onGenerate = { viewModel.onEvent(OciOnboardingEvent.GenerateApiKey) },
+                            onContinue = { viewModel.onEvent(OciOnboardingEvent.ContinueToKeyRegistration) }
                         )
                         OciOnboardingStage.API_KEY_REGISTRATION -> ApiKeyRegistrationStage(
                             publicKeyPem = uiState.publicKeyPem,
@@ -238,6 +239,37 @@ fun OciOnboardingScreen(
             dismissButton = {
                 TextButton(onClick = { showStartOverConfirm = false }) {
                     Text("Cancel", color = ImmersiveTextSecondary)
+                }
+            },
+            containerColor = ImmersiveSurface
+        )
+    }
+
+    uiState.pendingResumeStage?.let { resumeStage ->
+        AlertDialog(
+            onDismissRequest = { /* must choose explicitly */ },
+            title = { Text("Continue setup?", color = ImmersiveTextPrimary) },
+            text = {
+                Text(
+                    "You have an Oracle Cloud setup in progress, last at ${stageLabel(resumeStage)}. " +
+                        "Continue where you left off, or start over from scratch?",
+                    color = ImmersiveTextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.onEvent(OciOnboardingEvent.ResumeSession) },
+                    enabled = !uiState.isResuming
+                ) {
+                    Text(if (uiState.isResuming) "Resuming…" else "Continue", color = CyanAccent)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.onEvent(OciOnboardingEvent.StartOver) },
+                    enabled = !uiState.isResuming
+                ) {
+                    Text("Start Over", color = ImmersiveStatusRed)
                 }
             },
             containerColor = ImmersiveSurface

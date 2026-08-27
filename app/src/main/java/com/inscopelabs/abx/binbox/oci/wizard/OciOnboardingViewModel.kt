@@ -38,6 +38,8 @@ class OciOnboardingViewModel @JvmOverloads constructor(
 
     private val accountHandler = OciAccountConfigHandler()
     private val discoveryHandler = OciEnvironmentDiscoveryHandler(provisioningRunner)
+    private val resumeHandler = OciResumeHandler(discoveryHandler, keyRepository)
+    private val hostConfigHandler = OciHostConfigSelectionHandler()
 
     private val _stage = MutableStateFlow(OciOnboardingStage.WELCOME)
     val stage: StateFlow<OciOnboardingStage> = _stage.asStateFlow()
@@ -49,7 +51,6 @@ class OciOnboardingViewModel @JvmOverloads constructor(
 
     init {
         BinBoxLogger.i(TAG, "Initializing OciOnboardingViewModel, session=${session.sessionId}, state=${session.state}")
-        _stage.value = OciStageMapper.stageFor(session.state)
         credentialsStore.load().let { result ->
             if (result is AppResult.Success && result.data != null) {
                 val creds = result.data
@@ -67,6 +68,15 @@ class OciOnboardingViewModel @JvmOverloads constructor(
                 }
             }
         }
+        // Don't silently jump into a resumed stage — a session with real progress (network,
+        // instance, etc. may already exist in OCI) needs the user's explicit go-ahead, since
+        // "resume" and "start fresh" are meaningfully different actions here.
+        if (session.state == OciProvisioningState.NOT_STARTED) {
+            _stage.value = OciOnboardingStage.WELCOME
+        } else {
+            BinBoxLogger.i(TAG, "Found resumable session at state=${session.state}, prompting user")
+            _uiState.update { it.copy(pendingResumeStage = OciStageMapper.stageFor(session.state)) }
+        }
     }
 
     fun onEvent(event: OciOnboardingEvent) {
@@ -75,7 +85,11 @@ class OciOnboardingViewModel @JvmOverloads constructor(
             is OciOnboardingEvent.GetStarted -> advanceTo(OciOnboardingStage.ACCOUNT_INFORMATION)
             is OciOnboardingEvent.ImportConfig -> _uiState.update { accountHandler.parseAndApplyConfig(event.rawConfig, it) }
             is OciOnboardingEvent.SubmitAccountInfo -> {
+                val accountChanged = _uiState.value.tenancyOcid != event.tenancyOcid ||
+                    _uiState.value.userOcid != event.userOcid ||
+                    _uiState.value.region != event.region
                 _uiState.update { accountHandler.normalizeAccountInfo(event.tenancyOcid, event.userOcid, event.region, it) }
+                if (accountChanged) invalidateFromAccountInfo()
                 advanceTo(OciOnboardingStage.API_KEY_GENERATION)
                 persistSessionState(OciProvisioningState.ACCOUNT_REQUIRED)
             }
@@ -100,15 +114,17 @@ class OciOnboardingViewModel @JvmOverloads constructor(
             is OciOnboardingEvent.VerifyConnection -> verifyConnection()
             OciOnboardingEvent.GenerateVmSshKey -> generateVmSshKey()
             OciOnboardingEvent.DiscoverContext -> discoverContext()
-            is OciOnboardingEvent.SelectCompartment -> _uiState.update { it.copy(context = it.context.copy(selectedCompartmentOcid = event.compartmentOcid)) }
+            is OciOnboardingEvent.SelectCompartment -> selectCompartment(event.compartmentOcid)
             is OciOnboardingEvent.SelectAvailabilityDomain -> selectAvailabilityDomain(event.availabilityDomain)
             is OciOnboardingEvent.SelectShape -> selectShape(event.shape)
-            is OciOnboardingEvent.SelectImage -> _uiState.update { it.copy(context = it.context.copy(selectedImageOcid = event.imageOcid)) }
+            is OciOnboardingEvent.SelectImage -> selectImage(event.imageOcid)
             OciOnboardingEvent.StartProvisioning -> startProvisioning()
             OciOnboardingEvent.GoBack -> handleGoBack()
             OciOnboardingEvent.EditAccountInfo -> advanceTo(OciOnboardingStage.ACCOUNT_INFORMATION)
             OciOnboardingEvent.StartOver -> handleStartOver()
             OciOnboardingEvent.Cancel -> persistSessionState(OciProvisioningState.CANCELLED)
+            OciOnboardingEvent.ContinueToKeyRegistration -> advanceTo(OciOnboardingStage.API_KEY_REGISTRATION)
+            OciOnboardingEvent.ResumeSession -> resumeSession()
         }
     }
 
@@ -181,8 +197,38 @@ class OciOnboardingViewModel @JvmOverloads constructor(
         }
     }
 
+    private fun selectCompartment(compartmentOcid: String) {
+        val (newUiState, newSession) = hostConfigHandler.selectCompartment(compartmentOcid, _uiState.value, session) ?: return
+        applySelection(newUiState, newSession)
+    }
+
     private fun selectAvailabilityDomain(ad: String) {
-        _uiState.update { it.copy(context = it.context.copy(selectedAvailabilityDomain = ad)) }
+        val (newUiState, newSession) = hostConfigHandler.selectAvailabilityDomain(ad, _uiState.value, session)
+        applySelection(newUiState, newSession)
+        fetchShapesFor(ad)
+    }
+
+    private fun selectShape(shape: String) {
+        val (newUiState, newSession) = hostConfigHandler.selectShape(shape, _uiState.value, session)
+        applySelection(newUiState, newSession)
+        fetchImagesFor(shape)
+    }
+
+    private fun selectImage(imageOcid: String) {
+        val (newUiState, newSession) = hostConfigHandler.selectImage(imageOcid, _uiState.value, session) ?: return
+        applySelection(newUiState, newSession)
+    }
+
+    private fun applySelection(newUiState: OciOnboardingUiState, newSession: OciProvisioningSession) {
+        _uiState.value = newUiState
+        if (newSession !== session) {
+            BinBoxLogger.i(TAG, "Host configuration changed — invalidating downstream provisioning progress")
+            session = newSession
+            provisioningRepository.save(session)
+        }
+    }
+
+    private fun fetchShapesFor(ad: String) {
         val creds = _uiState.value.credentials ?: return
         val compId = _uiState.value.context.selectedCompartmentOcid ?: return
         val client = OciClient(creds.region) { _uiState.value.credentials }
@@ -194,8 +240,7 @@ class OciOnboardingViewModel @JvmOverloads constructor(
         }
     }
 
-    private fun selectShape(shape: String) {
-        _uiState.update { it.copy(context = it.context.copy(selectedShapeName = shape)) }
+    private fun fetchImagesFor(shape: String) {
         val creds = _uiState.value.credentials ?: return
         val compId = _uiState.value.context.selectedCompartmentOcid ?: return
         val client = OciClient(creds.region) { _uiState.value.credentials }
@@ -207,13 +252,25 @@ class OciOnboardingViewModel @JvmOverloads constructor(
         }
     }
 
+    private fun invalidateFromAccountInfo() {
+        BinBoxLogger.i(TAG, "Account info changed — invalidating discovered environment and provisioning progress")
+        val (newUiState, newSession) = OciProvisioningInvalidation.clearFromAccountChange(_uiState.value, session)
+        _uiState.value = newUiState
+        session = newSession
+    }
+
     private fun generateVmSshKey() {
         viewModelScope.launch {
             _uiState.update { it.copy(isGeneratingVmSshKey = true, error = null) }
             when (val result = provisioningRunner.generateVmSshKey(session.sessionId)) {
                 is AppResult.Success -> {
+                    session = session.copy(sshKeyAlias = result.data.id.toString())
                     _uiState.update { it.copy(isGeneratingVmSshKey = false, vmSshPublicKey = result.data.publicKey, error = null) }
                     advanceTo(OciOnboardingStage.NETWORK_PROVISIONING)
+                    persistSessionState(OciProvisioningState.SSH_KEY_READY)
+                    // Actually kick off provisioning — reaching this stage previously just
+                    // displayed "Starting…" forever because nothing called startProvisioning().
+                    startProvisioning()
                 }
                 is AppResult.Error -> _uiState.update { it.copy(isGeneratingVmSshKey = false, error = result.error.userMessage) }
                 AppResult.Loading -> Unit
@@ -228,20 +285,12 @@ class OciOnboardingViewModel @JvmOverloads constructor(
         if (creds == null || client == null) return
 
         viewModelScope.launch {
-            val sshPublicKey = _uiState.value.vmSshPublicKey
-                ?: session.sshKeyAlias?.toLongOrNull()?.let { keyRepository.getKeyById(it)?.publicKey }
-            if (sshPublicKey == null) {
-                _uiState.update { it.copy(error = "No VM SSH key yet — generate one first.") }
-                return@launch
-            }
-
             _uiState.update { it.copy(isProvisioning = true, error = null) }
-            val result = OciProvisioner(client).provision(session, context, sshPublicKey) { updated ->
+            val result = provisioningRunner.runProvisioning(session, context, _uiState.value.vmSshPublicKey, client) { updated ->
                 session = updated
                 provisioningRepository.save(updated)
                 _uiState.update { it.copy(provisioningState = updated.state) }
             }
-
             when (result) {
                 is OciResult.Success -> {
                     session = result.data
@@ -264,6 +313,38 @@ class OciOnboardingViewModel @JvmOverloads constructor(
             }
             is AppResult.Error -> _uiState.update { it.copy(error = "Instance provisioned, but couldn't register host: ${res.error.userMessage}") }
             AppResult.Loading -> Unit
+        }
+    }
+
+    /** Restores wizard UI state from the persisted [session] and continues from wherever it left
+     * off, via [OciResumeHandler] (module role — see that file's kdoc for why re-provisioning on
+     * resume is safe). */
+    private fun resumeSession() {
+        val targetStage = OciStageMapper.stageFor(session.state)
+        BinBoxLogger.i(TAG, "Resuming session ${session.sessionId} at state=${session.state} -> stage=$targetStage")
+        _uiState.update {
+            it.copy(
+                pendingResumeStage = null,
+                isResuming = true,
+                context = session.context,
+                provisionedPublicIp = session.publicIp,
+                provisioningState = session.state.takeIf { s -> s in resumeHandler.inProgressStates }
+            )
+        }
+        _stage.value = targetStage
+
+        viewModelScope.launch {
+            val creds = _uiState.value.credentials
+            resumeHandler.resume(
+                session = session,
+                credentials = creds,
+                currentPublicKeyPem = _uiState.value.publicKeyPem,
+                targetStage = targetStage,
+                updateUiState = { transform -> _uiState.update(transform) },
+                onProvisioningInProgress = { startProvisioning() },
+                onProvisioningComplete = { creds?.let { registerHost(it, session) } }
+            )
+            _uiState.update { it.copy(isResuming = false) }
         }
     }
 

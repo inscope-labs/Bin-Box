@@ -3,15 +3,20 @@ package com.inscopelabs.abx.binbox.oci
 import android.app.Application
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ApplicationProvider
+import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningRepository
+import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningSession
+import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningState
 import com.inscopelabs.abx.binbox.oci.wizard.*
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -74,6 +79,72 @@ class OciOnboardingViewModelTest {
         // Advance again and test StartOver
         viewModel.onEvent(OciOnboardingEvent.GetStarted)
         viewModel.onEvent(OciOnboardingEvent.StartOver)
+        assertEquals(OciOnboardingStage.WELCOME, viewModel.stage.value)
+    }
+
+    @Test
+    fun testContinueButtonAdvancesPastApiKeyGenerationOnReturn() {
+        // Regression test for the step-2 dead end: navigating back to API_KEY_GENERATION after
+        // a key already exists must not strand the user with no way forward. The manual
+        // ContinueToKeyRegistration event (wired to the stage's new "Continue" button) must
+        // advance the wizard regardless of how the stage was reached.
+        val factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application)
+        val viewModel = factory.create(OciOnboardingViewModel::class.java)
+
+        viewModel.onEvent(OciOnboardingEvent.GetStarted)
+        viewModel.onEvent(OciOnboardingEvent.SubmitAccountInfo(
+            tenancyOcid = "ocid1.tenancy.oc1..aaaaaaaaompgipsy3qst3b3ecscsgr73ov6fvzxb72ozjgq4lmcexeizbrwq",
+            userOcid = "ocid1.user.oc1..aaaaaaaazcbems22m5rrebu3zhpzegqgxplr7gsrfcppgmojxdgmqjwfihxq",
+            region = "sa-saopaulo-1"
+        ))
+        assertEquals(OciOnboardingStage.API_KEY_GENERATION, viewModel.stage.value)
+
+        viewModel.onEvent(OciOnboardingEvent.ContinueToKeyRegistration)
+        assertEquals(OciOnboardingStage.API_KEY_REGISTRATION, viewModel.stage.value)
+    }
+
+    @Test
+    fun testResumePromptShownForPersistedInProgressSession() {
+        // Regression test for "always starts over": a session persisted mid-wizard (by a
+        // previous instance of the ViewModel, e.g. before the process was killed) must surface
+        // a resume prompt on the next launch instead of being silently dropped or auto-resumed.
+        val now = System.currentTimeMillis()
+        OciProvisioningRepository(application).save(
+            OciProvisioningSession(
+                sessionId = UUID.randomUUID().toString(),
+                state = OciProvisioningState.CONTEXT_DISCOVERED,
+                createdAtMillis = now,
+                updatedAtMillis = now
+            )
+        )
+
+        val factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application)
+        val viewModel = factory.create(OciOnboardingViewModel::class.java)
+
+        assertEquals(OciOnboardingStage.HOST_CONFIGURATION, viewModel.uiState.value.pendingResumeStage)
+        // Stage navigation itself must stay put (WELCOME) until the user chooses.
+        assertEquals(OciOnboardingStage.WELCOME, viewModel.stage.value)
+    }
+
+    @Test
+    fun testStartOverFromResumePromptDiscardsSessionAndClearsPrompt() {
+        val now = System.currentTimeMillis()
+        OciProvisioningRepository(application).save(
+            OciProvisioningSession(
+                sessionId = UUID.randomUUID().toString(),
+                state = OciProvisioningState.CONTEXT_DISCOVERED,
+                createdAtMillis = now,
+                updatedAtMillis = now
+            )
+        )
+
+        val factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application)
+        val viewModel = factory.create(OciOnboardingViewModel::class.java)
+        assertNotNull(viewModel.uiState.value.pendingResumeStage)
+
+        viewModel.onEvent(OciOnboardingEvent.StartOver)
+
+        assertNull(viewModel.uiState.value.pendingResumeStage)
         assertEquals(OciOnboardingStage.WELCOME, viewModel.stage.value)
     }
 

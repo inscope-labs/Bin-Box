@@ -217,7 +217,8 @@ fun AccountInfoStage(
 fun ApiKeyGenerationStage(
     publicKeyPem: String?,
     error: String?,
-    onGenerate: () -> Unit
+    onGenerate: () -> Unit,
+    onContinue: () -> Unit
 ) {
     StageHeader("Generate an API signing key", "This key pair is created on-device and the private half never leaves the Android Keystore.")
 
@@ -231,15 +232,20 @@ fun ApiKeyGenerationStage(
         Spacer(Modifier.height(24.dp))
         PrimaryButton(text = "Generate key", onClick = onGenerate, modifier = Modifier.testTag("oci_generate_api_key"))
     } else {
+        // Reached either right after generating (auto-advances past this stage) or by
+        // navigating back here afterward — in the latter case nothing else advances the
+        // wizard, so a manual Continue button is required or this stage is a dead end.
         Text("Public key generated", color = ImmersiveStatusGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         Spacer(Modifier.height(8.dp))
         CopyableCodeBlock(publicKeyPem)
         Spacer(Modifier.height(16.dp))
         Text(
-            "This moves you to the next step automatically. Copy the key above before continuing — you'll paste it into the OCI console there.",
+            "Copy the key above before continuing — you'll paste it into the OCI console on the next step.",
             color = ImmersiveTextSecondary,
             fontSize = 12.sp
         )
+        Spacer(Modifier.height(24.dp))
+        PrimaryButton(text = "Continue", onClick = onContinue, modifier = Modifier.testTag("oci_continue_api_key_generation"))
     }
 }
 

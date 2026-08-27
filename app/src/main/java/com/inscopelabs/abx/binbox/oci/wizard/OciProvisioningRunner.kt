@@ -16,7 +16,7 @@ import com.inscopelabs.abx.binbox.oci.terminal.OciShellHost
 import com.inscopelabs.abx.binbox.oci.terminal.defaultSshUsernameFor
 
 class OciProvisioningRunner(
-    keyRepository: KeyRepositoryImpl,
+    private val keyRepository: KeyRepositoryImpl,
     hostRepository: HostRepositoryImpl
 ) {
     private val sshKeyProvisioner = OciSshKeyProvisioner(keyRepository)
@@ -38,6 +38,28 @@ class OciProvisioningRunner(
         val compartments = (compRes as OciResult.Success).data
         val ads = (adRes as OciResult.Success).data.map { it.name }
         return OciResult.Success(Pair(compartments, ads))
+    }
+
+    /** Resolves the VM SSH public key (preferring [vmSshPublicKeyOverride], falling back to the
+     * repository lookup by [OciProvisioningSession.sshKeyAlias] for a resumed session that never
+     * cached it in memory) and runs [OciProvisioner.provision]. */
+    suspend fun runProvisioning(
+        session: OciProvisioningSession,
+        context: OciProvisioningContext,
+        vmSshPublicKeyOverride: String?,
+        client: OciClient,
+        onSessionUpdate: suspend (OciProvisioningSession) -> Unit
+    ): OciResult<OciProvisioningSession> {
+        val sshPublicKey = vmSshPublicKeyOverride
+            ?: session.sshKeyAlias?.toLongOrNull()?.let { keyRepository.getKeyById(it)?.publicKey }
+            ?: return OciResult.Error(
+                OciProvisioningError(
+                    category = OciErrorCategory.ACCOUNT_ERROR,
+                    whatHappened = "No VM SSH key yet — generate one first.",
+                    retryable = false
+                )
+            )
+        return OciProvisioner(client).provision(session, context, sshPublicKey, onSessionUpdate = onSessionUpdate)
     }
 
     suspend fun registerHost(
