@@ -33,7 +33,7 @@ fun ConnectionVerificationStage(
 
             if (diagnostics != null) {
                 Spacer(Modifier.height(14.dp))
-                DiagnosticsCard(diagnostics)
+                OciDiagnosticsCard(diagnostics)
             }
 
             Spacer(Modifier.height(20.dp))
@@ -66,14 +66,14 @@ fun ConnectionVerificationStage(
             )
             if (diagnostics != null) {
                 Spacer(Modifier.height(12.dp))
-                DiagnosticsCard(diagnostics)
+                OciDiagnosticsCard(diagnostics)
             }
             Spacer(Modifier.height(24.dp))
             PrimaryButton(text = "Continue", onClick = onContinue, modifier = Modifier.testTag("oci_continue_after_verify"))
         }
         else -> {
             if (diagnostics != null) {
-                DiagnosticsCard(diagnostics)
+                OciDiagnosticsCard(diagnostics)
                 Spacer(Modifier.height(16.dp))
             }
             PrimaryButton(
@@ -95,6 +95,7 @@ fun ConnectionVerificationStage(
 fun ContextDiscoveryStage(
     isDiscovering: Boolean,
     error: String?,
+    diagnostics: OciVerificationDiagnostics? = null,
     onDiscover: () -> Unit
 ) {
     LaunchedEffect(Unit) { onDiscover() }
@@ -105,6 +106,10 @@ fun ContextDiscoveryStage(
         isDiscovering -> LoadingRow("Fetching compartments and availability domains…")
         error != null -> {
             ErrorBanner(error)
+            if (diagnostics != null) {
+                Spacer(Modifier.height(14.dp))
+                OciDiagnosticsCard(diagnostics)
+            }
             Spacer(Modifier.height(16.dp))
             PrimaryButton(text = "Retry", onClick = onDiscover, modifier = Modifier.testTag("oci_retry_discovery"))
         }

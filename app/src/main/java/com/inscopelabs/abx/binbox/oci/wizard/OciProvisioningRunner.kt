@@ -27,20 +27,17 @@ class OciProvisioningRunner(
         return sshKeyProvisioner.generateForSession(sessionId)
     }
 
-    suspend fun discoverContext(client: OciClient, tenancyOcid: String): AppResult<Pair<List<Compartment>, List<String>>> {
+    suspend fun discoverContext(client: OciClient, tenancyOcid: String): OciResult<Pair<List<Compartment>, List<String>>> {
         BinBoxLogger.i(TAG, "Discovering compartments and availability domains for tenancy $tenancyOcid")
         val discovery = OciContextDiscovery(client)
         val compRes = discovery.fetchCompartments(tenancyOcid)
+        if (compRes is OciResult.Error) return compRes
         val adRes = discovery.fetchAvailabilityDomains(tenancyOcid)
+        if (adRes is OciResult.Error) return adRes
 
-        val err = (compRes as? OciResult.Error)?.error ?: (adRes as? OciResult.Error)?.error
-        if (err != null) {
-            return AppResult.Error(AppError.NetworkError.Generic(err.whatHappened))
-        }
-
-        val compartments = (compRes as? OciResult.Success)?.data.orEmpty()
-        val ads = (adRes as? OciResult.Success)?.data.orEmpty().map { it.name }
-        return AppResult.Success(Pair(compartments, ads))
+        val compartments = (compRes as OciResult.Success).data
+        val ads = (adRes as OciResult.Success).data.map { it.name }
+        return OciResult.Success(Pair(compartments, ads))
     }
 
     suspend fun registerHost(

@@ -181,6 +181,7 @@ fun OciOnboardingScreen(
                         OciOnboardingStage.OCI_CONTEXT_DISCOVERY -> ContextDiscoveryStage(
                             isDiscovering = uiState.isDiscovering,
                             error = uiState.error,
+                            diagnostics = uiState.diagnostics,
                             onDiscover = { viewModel.onEvent(OciOnboardingEvent.DiscoverContext) }
                         )
                         OciOnboardingStage.HOST_CONFIGURATION -> HostConfigurationStage(
@@ -204,6 +205,7 @@ fun OciOnboardingScreen(
                             stage = targetStage,
                             provisioningState = uiState.provisioningState,
                             error = uiState.error,
+                            diagnostics = uiState.diagnostics,
                             onStart = { viewModel.onEvent(OciOnboardingEvent.StartProvisioning) }
                         )
                         OciOnboardingStage.HOST_REGISTRATION -> HostRegistrationStage(

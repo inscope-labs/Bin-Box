@@ -79,7 +79,13 @@ fun HostConfigurationStage(
         )
     }
 
-    uiState.error?.let { ErrorBanner(it) }
+    uiState.error?.let {
+        ErrorBanner(it)
+        if (uiState.diagnostics != null) {
+            Spacer(Modifier.height(14.dp))
+            OciDiagnosticsCard(uiState.diagnostics)
+        }
+    }
 
     Spacer(Modifier.height(24.dp))
     val ready = uiState.context.selectedCompartmentOcid != null &&
@@ -103,6 +109,7 @@ fun ProvisioningProgressStage(
     stage: OciOnboardingStage,
     provisioningState: OciProvisioningState?,
     error: String?,
+    diagnostics: OciVerificationDiagnostics? = null,
     onStart: () -> Unit
 ) {
     StageHeader("Provisioning your VM", "This creates real Oracle Cloud infrastructure: a VCN, subnet, internet gateway, and compute instance. Usually takes 1-2 minutes.")
@@ -127,6 +134,10 @@ fun ProvisioningProgressStage(
     error?.let {
         Spacer(Modifier.height(16.dp))
         ErrorBanner(it)
+        if (diagnostics != null) {
+            Spacer(Modifier.height(14.dp))
+            OciDiagnosticsCard(diagnostics)
+        }
         Spacer(Modifier.height(16.dp))
         PrimaryButton(text = "Retry", onClick = onStart, modifier = Modifier.testTag("oci_retry_provision"))
     }
