@@ -55,15 +55,16 @@ jobs:
         run: |
           PROP_FILE="version.properties"
           if [ -f "$PROP_FILE" ]; then
-            VERSION_CODE=$(grep '^versionCode=' "$PROP_FILE" | cut -d'=' -f2 | tr -d '\r')
-            VERSION_NAME=$(grep '^versionName=' "$PROP_FILE" | cut -d'=' -f2 | tr -d '\r')
-            DEBUG_CODE=$(grep '^debugCode=' "$PROP_FILE" | cut -d'=' -f2 | tr -d '\r')
+            VERSION_CODE=$(grep -E '^\s*versionCode\s*=' "$PROP_FILE" | cut -d'=' -f2 | tr -d ' \r\t')
+            VERSION_NAME=$(grep -E '^\s*versionName\s*=' "$PROP_FILE" | cut -d'=' -f2 | tr -d ' \r\t')
+            DEBUG_CODE=$(grep -E '^\s*debugCode\s*=' "$PROP_FILE" | cut -d'=' -f2 | tr -d ' \r\t')
           fi
 
           VERSION_CODE=${VERSION_CODE:-1}
           VERSION_NAME=${VERSION_NAME:-1.0}
           DEBUG_CODE=${DEBUG_CODE:-0001}
 
+          echo "Parsed version info: versionCode=$VERSION_CODE, versionName=$VERSION_NAME, debugCode=$DEBUG_CODE"
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "debug_code=$DEBUG_CODE" >> $GITHUB_OUTPUT
