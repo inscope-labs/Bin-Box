@@ -87,7 +87,7 @@ must implement adequate logging of its own process flow — entry points,
 key decision branches, and completion/failure outcomes — sufficient for
 someone to reconstruct what happened after the fact from the log file
 alone, without needing to reproduce the issue live. Use the existing
-Logger facade (com.inscopelabs.abx.clipinbox.diagnostics.Logger — d/i/w/e)
+Logger facade (com.inscopelabs.abx.binbox.core.logging.BinBoxLogger — v/d/i/w/e)
 exactly as it's already used throughout the codebase. Logger is safe to
 call from any file regardless of build variant — it resolves to a real
 implementation in debug builds and a true no-op in release builds
@@ -170,6 +170,41 @@ Before starting any task, check `issues/pending/` for any `FILE-SIZE` or
 `COMPLIANCE-CHECK` issue naming a file in this task's touch-set. A match
 adds remediation to this task's scope automatically, per the same
 pattern as Section 3.1.
+
+## 5. Production / Beta Release Model
+
+BinBox ships as a single AAB to both Google Play's testing tracks (Open/
+Closed testing = beta) and its Production track. There is no separate
+beta build variant or applicationId — gating is entirely a runtime
+concern.
+
+**The roadmap** (`core/featureflags/ReleaseStage.kt`) is 10 fixed stages,
+v0.1.0 through v1.0.0. Beta is always exactly one stage ahead of
+production; a stage only advances once the one before it has proven
+stable — no stage is ever skipped on either track.
+
+**Gating** (`core/featureflags/FeatureFlags.kt` +
+`core/featureflags/Feature.kt`): a `Feature` enum entry pins each
+gate-able user-facing feature to the `ReleaseStage` it was introduced at.
+`FeatureFlags.CURRENT_PRODUCTION_STAGE` is the one constant that changes
+per promotion — bump it exactly once when a stage has actually completed
+a full beta cycle, never speculatively. Anything at or before that stage
+is always on; anything exactly one stage beyond it is on only for
+devices where `BetaEnrollment.isEnrolled()` is true; anything further
+ahead is off for everyone, whether or not it's already built.
+
+**New features**: before adding a new user-facing capability, check
+whether it needs a new `Feature` entry (does it materially change what
+the user can do, spanning whatever packages it needs to — the boundary
+is consolidated user-facing value, not file or package structure) or
+whether it's a fix/refinement to something already gated (no new entry
+needed). Do not gate internal-only plumbing (DAOs, transport internals,
+crypto) — only the user-visible surface.
+
+**Never** bump `CURRENT_PRODUCTION_STAGE` and never write to
+`versionName` as part of implementing a feature itself — both are
+release decisions made separately, after a stage has actually been
+proven, not a side effect of shipping the code for it.
 
 ## 4.2 Restructuring Tasks Are Repository-Wide Compliance Audits
 
