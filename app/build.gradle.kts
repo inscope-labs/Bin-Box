@@ -27,6 +27,16 @@ val resolvedVersionCode = (project.findProperty("versionCode") as? String)?.trim
 val resolvedVersionName = (project.findProperty("versionName") as? String)?.trim()
   ?: if (!propDebugCode.isNullOrEmpty()) "$propVersionName.$propDebugCode" else propVersionName
 
+println("=== VERSION DEBUG ===")
+println("version.properties: ${versionPropsFile.absolutePath}")
+println("exists: ${versionPropsFile.exists()}")
+println("versionCode from file: ${versionProps.getProperty("versionCode")}")
+println("versionName from file: ${versionProps.getProperty("versionName")}")
+println("debugCode from file: ${versionProps.getProperty("debugCode")}")
+println("resolvedVersionCode: $resolvedVersionCode")
+println("resolvedVersionName: $resolvedVersionName")
+println("=====================")
+
 android {
   namespace = "com.inscopelabs.abx.binbox"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
