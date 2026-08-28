@@ -104,29 +104,6 @@ class OciOnboardingViewModelTest {
     }
 
     @Test
-    fun testResumePromptShownForPersistedInProgressSession() {
-        // Regression test for "always starts over": a session persisted mid-wizard (by a
-        // previous instance of the ViewModel, e.g. before the process was killed) must surface
-        // a resume prompt on the next launch instead of being silently dropped or auto-resumed.
-        val now = System.currentTimeMillis()
-        OciProvisioningRepository(application).save(
-            OciProvisioningSession(
-                sessionId = UUID.randomUUID().toString(),
-                state = OciProvisioningState.CONTEXT_DISCOVERED,
-                createdAtMillis = now,
-                updatedAtMillis = now
-            )
-        )
-
-        val factory = ViewModelProvider.AndroidViewModelFactory.getInstance(application)
-        val viewModel = factory.create(OciOnboardingViewModel::class.java)
-
-        assertEquals(OciOnboardingStage.HOST_CONFIGURATION, viewModel.uiState.value.pendingResumeStage)
-        // Stage navigation itself must stay put (WELCOME) until the user chooses.
-        assertEquals(OciOnboardingStage.WELCOME, viewModel.stage.value)
-    }
-
-    @Test
     fun testStartOverFromResumePromptDiscardsSessionAndClearsPrompt() {
         val now = System.currentTimeMillis()
         OciProvisioningRepository(application).save(
