@@ -54,6 +54,6 @@ data class OciShellHost(
         username = username,
         authType = if (keyId != null) AuthType.PRIVATE_KEY else AuthType.PASSWORD,
         keyId = keyId,
-        groupTag = "Oracle Cloud"
+        groupTag = com.inscopelabs.abx.binbox.oci.management.OciProvisioningStatus.OCI_HOST_GROUP_TAG
     )
 }

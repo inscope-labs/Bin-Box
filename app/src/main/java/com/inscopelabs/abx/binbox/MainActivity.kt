@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.inscopelabs.abx.binbox.oci.management.OciManagementScreen
+import com.inscopelabs.abx.binbox.oci.management.OciProvisioningStatus
 import com.inscopelabs.abx.binbox.oci.wizard.LocalOciWizardLauncher
 import com.inscopelabs.abx.binbox.oci.wizard.OciOnboardingScreen
 import com.inscopelabs.abx.binbox.ui.components.*
@@ -39,17 +41,28 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: BinBoxViewModel = viewModel()
             val strings by viewModel.strings.collectAsStateWithLifecycle()
+            val hosts by viewModel.hosts.collectAsStateWithLifecycle()
             var showOciWizard by remember { mutableStateOf(false) }
+            var showOciManagement by remember { mutableStateOf(false) }
+            val hasCompletedOciProvisioning = OciProvisioningStatus.hasCompletedProvisioning(hosts)
 
             CompositionLocalProvider(
                 LocalAppStrings provides strings,
-                LocalOciWizardLauncher provides { showOciWizard = true }
+                // Every OCI entry point (FAB, promo card, quick-action tile, settings/terminal
+                // launchers) calls this same lambda — routing to management once a real
+                // provisioned host exists is decided once, here, rather than at each call site.
+                LocalOciWizardLauncher provides {
+                    if (hasCompletedOciProvisioning) showOciManagement = true else showOciWizard = true
+                }
             ) {
                 BinBoxTheme {
                     BinBoxApp(
                         viewModel = viewModel,
+                        hosts = hosts,
                         showOciWizard = showOciWizard,
-                        onSetShowOciWizard = { showOciWizard = it }
+                        onSetShowOciWizard = { showOciWizard = it },
+                        showOciManagement = showOciManagement,
+                        onSetShowOciManagement = { showOciManagement = it }
                     )
                 }
             }
@@ -61,8 +74,11 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun BinBoxApp(
     viewModel: BinBoxViewModel = viewModel(),
+    hosts: List<com.inscopelabs.abx.binbox.data.entity.HostEntity> = emptyList(),
     showOciWizard: Boolean = false,
-    onSetShowOciWizard: (Boolean) -> Unit = {}
+    onSetShowOciWizard: (Boolean) -> Unit = {},
+    showOciManagement: Boolean = false,
+    onSetShowOciManagement: (Boolean) -> Unit = {}
 ) {
     val strings = LocalAppStrings.current
     val currentTab by viewModel.currentAppTab.collectAsStateWithLifecycle()
@@ -365,7 +381,38 @@ fun BinBoxApp(
         ) {
             OciOnboardingScreen(
                 onDismiss = { onSetShowOciWizard(false) },
-                onShellReady = { onSetShowOciWizard(false) }
+                // Provisioning just verifiably completed (a host was registered) — land the
+                // user straight in management instead of dropping them back wherever they were.
+                onShellReady = {
+                    onSetShowOciWizard(false)
+                    onSetShowOciManagement(true)
+                }
+            )
+        }
+    }
+
+    // Oracle Cloud Management Modal — once provisioning has verifiably completed (a real
+    // registered host exists, per OciProvisioningStatus), every OCI entry point lands here
+    // instead of re-running onboarding. "Provision another VM" still drops back into the wizard.
+    if (showOciManagement) {
+        val ociHosts = hosts.filter { OciProvisioningStatus.isOciHost(it) }
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { onSetShowOciManagement(false) },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            OciManagementScreen(
+                hosts = ociHosts,
+                onConnect = { host ->
+                    onSetShowOciManagement(false)
+                    viewModel.connectToHost(host)
+                },
+                onPing = { host -> viewModel.pingHost(host) },
+                onToggleFavorite = { host -> viewModel.toggleHostFavorite(host) },
+                onProvisionAnother = {
+                    onSetShowOciManagement(false)
+                    onSetShowOciWizard(true)
+                },
+                onDismiss = { onSetShowOciManagement(false) }
             )
         }
     }

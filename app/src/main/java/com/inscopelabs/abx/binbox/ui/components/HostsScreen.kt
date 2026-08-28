@@ -29,10 +29,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.inscopelabs.abx.binbox.data.entity.HostEntity
-import com.inscopelabs.abx.binbox.oci.wizard.OciOnboardingScreen
+import com.inscopelabs.abx.binbox.oci.wizard.LocalOciWizardLauncher
 import com.inscopelabs.abx.binbox.terminal.model.ProtocolType
 import com.inscopelabs.abx.binbox.terminal.model.TerminalThemes
 import com.inscopelabs.abx.binbox.ui.theme.*
@@ -50,13 +48,13 @@ fun HostsScreen(
     val keys by viewModel.keys.collectAsStateWithLifecycle()
     val activeWorkspace by viewModel.activeWorkspace.collectAsStateWithLifecycle()
     val workspaces by viewModel.workspaces.collectAsStateWithLifecycle()
+    val launchOci = LocalOciWizardLauncher.current
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedGroupFilter by remember { mutableStateOf("All") }
     var showAddEditDialog by remember { mutableStateOf(false) }
     var hostToEdit by remember { mutableStateOf<HostEntity?>(null) }
     var showQuickConnect by remember { mutableStateOf(false) }
-    var showOciWizard by remember { mutableStateOf(false) }
 
     val groupTags = listOf("All", "Favorites", "Workspace (${activeWorkspace.name})", "Cloud", "HomeLab", "Production", "Local", "IoT")
 
@@ -81,7 +79,7 @@ fun HostsScreen(
         floatingActionButton = {
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ExtendedFloatingActionButton(
-                    onClick = { showOciWizard = true },
+                    onClick = { launchOci() },
                     containerColor = Slate800,
                     contentColor = CyanGlow,
                     icon = { Icon(Icons.Default.Cloud, contentDescription = null, modifier = Modifier.size(20.dp)) },
@@ -313,7 +311,7 @@ fun HostsScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
                     com.inscopelabs.abx.binbox.oci.wizard.OciFreeTierPromoCard(
-                        onLaunchWizard = { showOciWizard = true },
+                        onLaunchWizard = { launchOci() },
                         modifier = Modifier.padding(horizontal = 8.dp)
                     )
                 }
@@ -352,24 +350,9 @@ fun HostsScreen(
             },
             onLaunchOciWizard = {
                 showAddEditDialog = false
-                showOciWizard = true
+                launchOci()
             }
         )
-    }
-
-    // Oracle Cloud provisioning wizard — full screen, self-contained (its own
-    // ViewModel writes directly to the host repository this screen's `hosts`
-    // flow already reads from, so the new host just appears on completion).
-    if (showOciWizard) {
-        Dialog(
-            onDismissRequest = { showOciWizard = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            OciOnboardingScreen(
-                onDismiss = { showOciWizard = false },
-                onShellReady = { showOciWizard = false }
-            )
-        }
     }
 }
 
