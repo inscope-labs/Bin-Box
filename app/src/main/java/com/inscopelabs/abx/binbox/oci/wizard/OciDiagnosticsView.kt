@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.inscopelabs.abx.binbox.oci.diagnostics.OciCallTraceViewerDialog
 import com.inscopelabs.abx.binbox.ui.theme.*
 
 /**
@@ -31,6 +32,7 @@ fun OciDiagnosticsCard(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var showTraceViewer by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
 
     Column(
@@ -61,15 +63,23 @@ fun OciDiagnosticsCard(
                     fontSize = 13.sp
                 )
             }
-            TextButton(
-                onClick = {
-                    clipboard.setText(AnnotatedString(diagnostics.toFormattedReport()))
-                },
-                modifier = Modifier.testTag("oci_copy_diagnostics_report")
-            ) {
-                Icon(Icons.Default.ContentCopy, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Copy Report", color = CyanAccent, fontSize = 12.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    onClick = { showTraceViewer = true },
+                    modifier = Modifier.testTag("oci_view_raw_traces_button")
+                ) {
+                    Icon(Icons.Default.Terminal, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("API Traces", color = CyanAccent, fontSize = 12.sp)
+                }
+                TextButton(
+                    onClick = { clipboard.setText(AnnotatedString(diagnostics.toFormattedReport())) },
+                    modifier = Modifier.testTag("oci_copy_diagnostics_report")
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Copy Report", color = CyanAccent, fontSize = 12.sp)
+                }
             }
         }
 
@@ -153,4 +163,9 @@ fun OciDiagnosticsCard(
             }
         }
     }
+
+    if (showTraceViewer) {
+        OciCallTraceViewerDialog(onDismiss = { showTraceViewer = false })
+    }
 }
+

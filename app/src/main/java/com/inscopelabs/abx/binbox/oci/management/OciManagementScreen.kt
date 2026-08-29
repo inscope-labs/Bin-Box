@@ -9,7 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.inscopelabs.abx.binbox.data.entity.HostEntity
+import com.inscopelabs.abx.binbox.oci.diagnostics.OciCallTraceViewerDialog
 import com.inscopelabs.abx.binbox.ui.theme.*
 
 /**
@@ -38,6 +39,8 @@ fun OciManagementScreen(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showTraceViewer by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
     Scaffold(
         modifier = modifier.fillMaxSize().testTag("oci_management_screen"),
         containerColor = ImmersiveBg,
@@ -52,8 +55,16 @@ fun OciManagementScreen(
                         Text("Oracle Cloud VMs", color = ImmersiveTextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                         Text("${hosts.size} instance${if (hosts.size == 1) "" else "s"} provisioned", color = ImmersiveTextMuted, fontSize = 12.sp)
                     }
-                    IconButton(onClick = onDismiss, modifier = Modifier.testTag("oci_management_close")) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = ImmersiveTextSecondary)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { showTraceViewer = true },
+                            modifier = Modifier.testTag("oci_management_traces_button")
+                        ) {
+                            Icon(Icons.Default.Terminal, contentDescription = "API Traces", tint = CyanAccent)
+                        }
+                        IconButton(onClick = onDismiss, modifier = Modifier.testTag("oci_management_close")) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = ImmersiveTextSecondary)
+                        }
                     }
                 }
             }
@@ -78,6 +89,10 @@ fun OciManagementScreen(
                 OciManagedHostCard(host, onConnect = { onConnect(host) }, onPing = { onPing(host) }, onToggleFavorite = { onToggleFavorite(host) })
             }
         }
+    }
+
+    if (showTraceViewer) {
+        OciCallTraceViewerDialog(onDismiss = { showTraceViewer = false })
     }
 }
 
