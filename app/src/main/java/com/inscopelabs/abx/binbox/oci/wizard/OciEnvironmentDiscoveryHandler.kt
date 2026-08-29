@@ -6,7 +6,7 @@ import com.inscopelabs.abx.binbox.oci.api.OciApiConfig
 import com.inscopelabs.abx.binbox.oci.api.OciClient
 import com.inscopelabs.abx.binbox.oci.api.compartments.Compartment
 import com.inscopelabs.abx.binbox.oci.api.compute.Image
-import com.inscopelabs.abx.binbox.oci.api.compute.Shape
+import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepContext
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
 import com.inscopelabs.abx.binbox.oci.identity.OciKeyManager
 import com.inscopelabs.abx.binbox.oci.provisioning.OciApiErrorMapper
@@ -34,21 +34,14 @@ class OciEnvironmentDiscoveryHandler(
         BinBoxLogger.i(TAG, "Starting OCI connection verification for user ${credentials.userOcid} in region ${credentials.region}")
         try {
             val client = OciClient(credentials.region) { credentials }
-            val response = client.identityApi.getUser(credentials.userOcid)
+            val response = OciStepContext.withStep(STAGE_VERIFY, "verify_connection.get_user") {
+                client.identityApi.getUser(credentials.userOcid)
+            }
             val opcReqId = response.headers()["opc-request-id"]
 
             if (response.isSuccessful) {
                 BinBoxLogger.i(TAG, "OCI connection verified successfully. OPC Request ID: $opcReqId")
-                val diagnostics = OciVerificationDiagnostics(
-                    endpointUrl = endpointUrl,
-                    httpMethod = "GET",
-                    region = credentials.region,
-                    tenancyOcid = credentials.tenancyOcid,
-                    userOcid = credentials.userOcid,
-                    fingerprint = credentials.fingerprint.value,
-                    keyAlias = credentials.keyAlias,
-                    publicKeyPem = pubKeyPem,
-                    localKeyDigest = keyDigest,
+                val diagnostics = baseDiagnostics(endpointUrl, credentials, pubKeyPem, keyDigest).copy(
                     httpStatusCode = response.code(),
                     opcRequestId = opcReqId
                 )
@@ -56,16 +49,7 @@ class OciEnvironmentDiscoveryHandler(
             } else {
                 val apiError = OciApiErrorMapper.fromErrorResponse(response)
                 BinBoxLogger.w(TAG, "OCI verification failed with code ${response.code()}: ${apiError.whatHappened}")
-                val diagnostics = OciVerificationDiagnostics(
-                    endpointUrl = endpointUrl,
-                    httpMethod = "GET",
-                    region = credentials.region,
-                    tenancyOcid = credentials.tenancyOcid,
-                    userOcid = credentials.userOcid,
-                    fingerprint = credentials.fingerprint.value,
-                    keyAlias = credentials.keyAlias,
-                    publicKeyPem = pubKeyPem,
-                    localKeyDigest = keyDigest,
+                val diagnostics = baseDiagnostics(endpointUrl, credentials, pubKeyPem, keyDigest).copy(
                     httpStatusCode = response.code(),
                     ociErrorCode = apiError.whyItHappened,
                     ociErrorMessage = apiError.whatHappened,
@@ -82,16 +66,7 @@ class OciEnvironmentDiscoveryHandler(
             } else {
                 "Couldn't reach OCI: ${e.localizedMessage ?: e.javaClass.simpleName}"
             }
-            val diagnostics = OciVerificationDiagnostics(
-                endpointUrl = endpointUrl,
-                httpMethod = "GET",
-                region = credentials.region,
-                tenancyOcid = credentials.tenancyOcid,
-                userOcid = credentials.userOcid,
-                fingerprint = credentials.fingerprint.value,
-                keyAlias = credentials.keyAlias,
-                publicKeyPem = pubKeyPem,
-                localKeyDigest = keyDigest,
+            val diagnostics = baseDiagnostics(endpointUrl, credentials, pubKeyPem, keyDigest).copy(
                 exceptionClass = e.javaClass.name,
                 rawExceptionMessage = e.message ?: e.toString()
             )
@@ -122,16 +97,7 @@ class OciEnvironmentDiscoveryHandler(
             is OciResult.Error -> {
                 val apiError = res.error
                 BinBoxLogger.w(TAG, "Context discovery failed: ${apiError.whatHappened}")
-                val diagnostics = OciVerificationDiagnostics(
-                    endpointUrl = endpointUrl,
-                    httpMethod = "GET",
-                    region = credentials.region,
-                    tenancyOcid = credentials.tenancyOcid,
-                    userOcid = credentials.userOcid,
-                    fingerprint = credentials.fingerprint.value,
-                    keyAlias = credentials.keyAlias,
-                    publicKeyPem = pubKeyPem,
-                    localKeyDigest = keyDigest,
+                val diagnostics = baseDiagnostics(endpointUrl, credentials, pubKeyPem, keyDigest).copy(
                     ociErrorCode = apiError.whyItHappened,
                     ociErrorMessage = apiError.whatHappened
                 )
@@ -180,7 +146,25 @@ class OciEnvironmentDiscoveryHandler(
         }
     }
 
+    private fun baseDiagnostics(
+        endpointUrl: String,
+        credentials: OciCredentials,
+        pubKeyPem: String?,
+        keyDigest: String?
+    ) = OciVerificationDiagnostics(
+        endpointUrl = endpointUrl,
+        httpMethod = "GET",
+        region = credentials.region,
+        tenancyOcid = credentials.tenancyOcid,
+        userOcid = credentials.userOcid,
+        fingerprint = credentials.fingerprint.value,
+        keyAlias = credentials.keyAlias,
+        publicKeyPem = pubKeyPem,
+        localKeyDigest = keyDigest
+    )
+
     companion object {
         private const val TAG = "OciEnvDiscoveryHandler"
+        const val STAGE_VERIFY = "CONNECTION_VERIFICATION"
     }
 }

@@ -51,8 +51,12 @@ class OciCredentialsStore(
             val json = adapter.toJson(stored)
             val encrypted = CredentialCrypto.encryptField(secureStorage, json)
                 ?: return AppResult.Error(AppError.CryptoError("Failed to encrypt OCI credentials"))
-            prefs.edit().putString(KEY_BLOB, encrypted).apply()
-            AppResult.Success(Unit)
+            val success = prefs.edit().putString(KEY_BLOB, encrypted).commit()
+            if (success) {
+                AppResult.Success(Unit)
+            } else {
+                AppResult.Error(AppError.IoError("Failed to commit OCI credentials to SharedPreferences"))
+            }
         } catch (e: Throwable) {
             BinBoxLogger.e("OciCredentialsStore", "Failed to save OCI credentials", e)
             AppResult.Error(AppError.IoError("Failed to save OCI credentials", e))
@@ -89,7 +93,7 @@ class OciCredentialsStore(
     /** Clears stored credentials. Does NOT delete the signing key itself —
      * callers that want full teardown must also call [OciKeyManager.deleteKey]. */
     fun clear() {
-        prefs.edit().remove(KEY_BLOB).apply()
+        prefs.edit().remove(KEY_BLOB).commit()
     }
 
     private data class StoredCredentials(

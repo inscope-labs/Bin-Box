@@ -1,5 +1,8 @@
 package com.inscopelabs.abx.binbox.oci.provisioning
 
+import com.squareup.moshi.Json
+import com.squareup.moshi.JsonClass
+
 /**
  * Categorized provisioning errors, per OCI provisioning doc §33.
  *
@@ -32,6 +35,7 @@ enum class OciErrorCategory {
  * requires every error to carry: what happened, why, what the user can do,
  * and whether retry applies.
  */
+@JsonClass(generateAdapter = true)
 data class OciProvisioningError(
     val category: OciErrorCategory,
     val whatHappened: String,
@@ -41,5 +45,5 @@ data class OciProvisioningError(
     // Excluded from persistence: this is nested inside OciProvisioningSession,
     // which OciProvisioningRepository serializes with Moshi's reflection
     // adapter — Throwable has no Moshi adapter and would fail at save time.
-    @Transient val cause: Throwable? = null
+    @Json(ignore = true) val cause: Throwable? = null
 )

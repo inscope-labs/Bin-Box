@@ -27,12 +27,20 @@ object OciApiErrorMapper {
     private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
     private val adapter = moshi.adapter(OciErrorBody::class.java)
 
+    /**
+     * Extracts OCI error code and message from a raw error JSON body string if present.
+     */
+    fun parseError(bodyJson: String?): Pair<String?, String?> {
+        if (bodyJson.isNullOrBlank()) return null to null
+        val parsed = runCatching { adapter.fromJson(bodyJson) }.getOrNull()
+        return parsed?.code to parsed?.message
+    }
+
     fun <T> fromErrorResponse(response: Response<T>, cause: Throwable? = null): OciProvisioningError {
         val httpCode = response.code()
         val bodyJson = runCatching { response.errorBody()?.string() }.getOrNull()
-        val parsed = bodyJson?.let { runCatching { adapter.fromJson(it) }.getOrNull() }
-        val code = parsed?.code
-        val message = parsed?.message ?: response.message()
+        val (code, parsedMessage) = parseError(bodyJson)
+        val message = parsedMessage ?: response.message()
 
         val category = when (httpCode) {
             400 -> when (code) {

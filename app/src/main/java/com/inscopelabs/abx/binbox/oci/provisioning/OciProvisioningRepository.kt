@@ -26,8 +26,13 @@ class OciProvisioningRepository(context: Context) {
 
     fun save(session: OciProvisioningSession): AppResult<Unit> {
         return try {
-            prefs.edit().putString(KEY_SESSION, adapter.toJson(session)).apply()
-            AppResult.Success(Unit)
+            val json = adapter.toJson(session)
+            val success = prefs.edit().putString(KEY_SESSION, json).commit()
+            if (success) {
+                AppResult.Success(Unit)
+            } else {
+                AppResult.Error(AppError.IoError("Failed to commit provisioning session to SharedPreferences"))
+            }
         } catch (e: Throwable) {
             BinBoxLogger.e("OciProvisioningRepository", "Failed to persist provisioning session", e)
             AppResult.Error(AppError.IoError("Failed to save provisioning session", e))
@@ -60,7 +65,7 @@ class OciProvisioningRepository(context: Context) {
     }
 
     fun clear() {
-        prefs.edit().remove(KEY_SESSION).apply()
+        prefs.edit().remove(KEY_SESSION).commit()
     }
 
     companion object {

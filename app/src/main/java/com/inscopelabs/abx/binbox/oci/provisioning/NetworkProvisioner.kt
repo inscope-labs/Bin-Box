@@ -9,6 +9,7 @@ import com.inscopelabs.abx.binbox.oci.api.networking.RouteRule
 import com.inscopelabs.abx.binbox.oci.api.networking.Subnet
 import com.inscopelabs.abx.binbox.oci.api.networking.UpdateRouteTableRequest
 import com.inscopelabs.abx.binbox.oci.api.networking.Vcn
+import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepContext
 import retrofit2.Response
 
 /** VCN/IGW/subnet already provisioned and reachable — the output §19's discover-or-create logic produces. */
@@ -20,16 +21,6 @@ data class NetworkResult(
 
 /**
  * Idempotent networking discover-or-create (§18-19).
- *
- * Discoverable by a STABLE tag, not a per-session id: [DISPLAY_NAME_TAG] is
- * a fixed name, not `"...-$sessionId"`. This is deliberate — re-running the
- * wizard (a new [OciProvisioningSession]) should reuse the same VCN in a
- * compartment rather than create a new one every time, since §19 requires
- * "discover existing infrastructure before creating." The `opc-retry-token`
- * passed to each create call is session-scoped instead (see
- * [retryTokenFor]) — that guards against a single request being duplicated
- * by a crash-and-retry within one attempt, a different idempotency concern
- * than "does the resource already exist at all."
  */
 class NetworkProvisioner(private val client: OciClient) {
 
@@ -40,12 +31,14 @@ class NetworkProvisioner(private val client: OciClient) {
         val igwResult = ensureInternetGateway(compartmentId, vcn, sessionId)
         val igw = (igwResult as? OciResult.Success)?.data ?: return igwResult as OciResult.Error
 
-        val routeUpdate = client.routeTableApi.updateRouteTable(
-            routeTableId = vcn.defaultRouteTableId,
-            request = UpdateRouteTableRequest(
-                routeRules = listOf(RouteRule(cidrBlock = "0.0.0.0/0", networkEntityId = igw.id))
+        val routeUpdate = OciStepContext.withStep(STAGE_ID, "update_route_table") {
+            client.routeTableApi.updateRouteTable(
+                routeTableId = vcn.defaultRouteTableId,
+                request = UpdateRouteTableRequest(
+                    routeRules = listOf(RouteRule(cidrBlock = "0.0.0.0/0", networkEntityId = igw.id))
+                )
             )
-        )
+        }
         if (!routeUpdate.isSuccessful) {
             return OciResult.Error(OciApiErrorMapper.fromErrorResponse(routeUpdate))
         }
@@ -59,45 +52,57 @@ class NetworkProvisioner(private val client: OciClient) {
     }
 
     private suspend fun ensureVcn(compartmentId: String, sessionId: String): OciResult<Vcn> {
-        val list = client.vcnApi.listVcns(compartmentId, displayName = DISPLAY_NAME_TAG)
+        val list = OciStepContext.withStep(STAGE_ID, "ensure_vcn.list") {
+            client.vcnApi.listVcns(compartmentId, displayName = DISPLAY_NAME_TAG)
+        }
         if (!list.isSuccessful) return OciResult.Error(OciApiErrorMapper.fromErrorResponse(list))
         list.body()?.firstOrNull()?.let { return OciResult.Success(it) }
 
-        val created = client.vcnApi.createVcn(
-            request = CreateVcnRequest(compartmentId = compartmentId, displayName = DISPLAY_NAME_TAG, cidrBlock = VCN_CIDR),
-            opcRetryToken = retryTokenFor("vcn", sessionId)
-        )
+        val created = OciStepContext.withStep(STAGE_ID, "ensure_vcn.create") {
+            client.vcnApi.createVcn(
+                request = CreateVcnRequest(compartmentId = compartmentId, displayName = DISPLAY_NAME_TAG, cidrBlock = VCN_CIDR),
+                opcRetryToken = retryTokenFor("vcn", sessionId)
+            )
+        }
         return created.toOciResult()
     }
 
     /** [InternetGatewayApi] has no `displayName` query filter — filtered client-side instead. */
     private suspend fun ensureInternetGateway(compartmentId: String, vcn: Vcn, sessionId: String): OciResult<InternetGateway> {
-        val list = client.internetGatewayApi.listInternetGateways(compartmentId, vcn.id)
+        val list = OciStepContext.withStep(STAGE_ID, "ensure_igw.list") {
+            client.internetGatewayApi.listInternetGateways(compartmentId, vcn.id)
+        }
         if (!list.isSuccessful) return OciResult.Error(OciApiErrorMapper.fromErrorResponse(list))
         list.body()?.firstOrNull { it.displayName == DISPLAY_NAME_TAG }?.let { return OciResult.Success(it) }
 
-        val created = client.internetGatewayApi.createInternetGateway(
-            request = CreateInternetGatewayRequest(compartmentId = compartmentId, vcnId = vcn.id, displayName = DISPLAY_NAME_TAG),
-            opcRetryToken = retryTokenFor("igw", sessionId)
-        )
+        val created = OciStepContext.withStep(STAGE_ID, "ensure_igw.create") {
+            client.internetGatewayApi.createInternetGateway(
+                request = CreateInternetGatewayRequest(compartmentId = compartmentId, vcnId = vcn.id, displayName = DISPLAY_NAME_TAG),
+                opcRetryToken = retryTokenFor("igw", sessionId)
+            )
+        }
         return created.toOciResult()
     }
 
     private suspend fun ensureSubnet(compartmentId: String, vcn: Vcn, sessionId: String): OciResult<Subnet> {
-        val list = client.subnetApi.listSubnets(compartmentId, vcn.id)
+        val list = OciStepContext.withStep(STAGE_ID, "ensure_subnet.list") {
+            client.subnetApi.listSubnets(compartmentId, vcn.id)
+        }
         if (!list.isSuccessful) return OciResult.Error(OciApiErrorMapper.fromErrorResponse(list))
         list.body()?.firstOrNull { it.displayName == DISPLAY_NAME_TAG }?.let { return OciResult.Success(it) }
 
-        val created = client.subnetApi.createSubnet(
-            request = CreateSubnetRequest(
-                compartmentId = compartmentId,
-                vcnId = vcn.id,
-                displayName = DISPLAY_NAME_TAG,
-                cidrBlock = SUBNET_CIDR,
-                routeTableId = vcn.defaultRouteTableId
-            ),
-            opcRetryToken = retryTokenFor("subnet", sessionId)
-        )
+        val created = OciStepContext.withStep(STAGE_ID, "ensure_subnet.create") {
+            client.subnetApi.createSubnet(
+                request = CreateSubnetRequest(
+                    compartmentId = compartmentId,
+                    vcnId = vcn.id,
+                    displayName = DISPLAY_NAME_TAG,
+                    cidrBlock = SUBNET_CIDR,
+                    routeTableId = vcn.defaultRouteTableId
+                ),
+                opcRetryToken = retryTokenFor("subnet", sessionId)
+            )
+        }
         return created.toOciResult()
     }
 
@@ -108,6 +113,7 @@ class NetworkProvisioner(private val client: OciClient) {
         else OciResult.Error(OciApiErrorMapper.fromErrorResponse(this))
 
     companion object {
+        const val STAGE_ID = "NETWORK_PROVISIONING"
         const val DISPLAY_NAME_TAG = "bin-box-managed"
         const val VCN_CIDR = "10.0.0.0/16"
         const val SUBNET_CIDR = "10.0.0.0/24"

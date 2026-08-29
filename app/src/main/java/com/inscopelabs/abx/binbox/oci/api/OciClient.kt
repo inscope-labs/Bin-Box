@@ -33,8 +33,11 @@ import retrofit2.converter.moshi.MoshiConverterFactory
  */
 class OciClient(
     region: String,
+    baseUrlOverride: String? = null,
     credentialsProvider: () -> OciCredentials?
 ) {
+    constructor(region: String, credentialsProvider: () -> OciCredentials?) : this(region, null, credentialsProvider)
+
     private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
 
     private val okHttpClient = OkHttpClient.Builder()
@@ -48,8 +51,8 @@ class OciClient(
         .addConverterFactory(MoshiConverterFactory.create(moshi))
         .build()
 
-    private val identityRetrofit = retrofitFor(OciApiConfig.identityBaseUrl(region))
-    private val coreServicesRetrofit = retrofitFor(OciApiConfig.coreServicesBaseUrl(region))
+    private val identityRetrofit = retrofitFor(baseUrlOverride ?: OciApiConfig.identityBaseUrl(region))
+    private val coreServicesRetrofit = retrofitFor(baseUrlOverride ?: OciApiConfig.coreServicesBaseUrl(region))
 
     val identityApi: IdentityApi by lazy { identityRetrofit.create(IdentityApi::class.java) }
     val vcnApi: VcnApi by lazy { coreServicesRetrofit.create(VcnApi::class.java) }

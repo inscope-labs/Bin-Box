@@ -1,11 +1,14 @@
 package com.inscopelabs.abx.binbox.oci.provisioning
 
+import com.squareup.moshi.JsonClass
+
 /**
  * What §15 calls "OciProvisioningContext" — the discovered OCI environment,
  * populated once authentication succeeds. Identifiers only; the actual
  * shape/image/network objects they refer to are fetched live from the OCI
  * API layer (deferred — see api/ package note) rather than cached here.
  */
+@JsonClass(generateAdapter = true)
 data class OciProvisioningContext(
     val availableCompartmentOcids: List<String> = emptyList(),
     val selectedCompartmentOcid: String? = null, // null = tenancy root (§16 default)
@@ -33,6 +36,7 @@ data class OciProvisioningContext(
  * must treat a non-null id field as "verify this still exists" rather
  * than "this is known good."
  */
+@JsonClass(generateAdapter = true)
 data class OciProvisioningSession(
     val sessionId: String,
     val state: OciProvisioningState,

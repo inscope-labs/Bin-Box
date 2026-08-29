@@ -92,17 +92,16 @@ class OciResumeHandler(
         onImages: (List<Image>) -> Unit,
         onError: (String, OciVerificationDiagnostics) -> Unit
     ) {
-        // discoverContext is fully suspend (no internal fire-and-forget launch), so onCompartments
-        // has already run by the time this call returns — safe to chain the shape/image fetches
-        // sequentially below rather than nesting them inside the callback.
-        discoveryHandler.discoverContext(client, credentials, currentPublicKeyPem, onSuccess = onCompartments, onError = onError)
+        com.inscopelabs.abx.binbox.oci.diagnostics.OciStepContext.withStep("RESUME", "rediscover_environment") {
+            discoveryHandler.discoverContext(client, credentials, currentPublicKeyPem, onSuccess = onCompartments, onError = onError)
 
-        val compId = context.selectedCompartmentOcid
-        val ad = context.selectedAvailabilityDomain
-        if (compId != null && ad != null) {
-            discoveryHandler.fetchShapes(client, compId, ad, onSuccess = onShapes, onError = { })
-            context.selectedShapeName?.let { shape ->
-                discoveryHandler.fetchImages(client, compId, shape, onSuccess = onImages, onError = { })
+            val compId = context.selectedCompartmentOcid
+            val ad = context.selectedAvailabilityDomain
+            if (compId != null && ad != null) {
+                discoveryHandler.fetchShapes(client, compId, ad, onSuccess = onShapes, onError = { })
+                context.selectedShapeName?.let { shape ->
+                    discoveryHandler.fetchImages(client, compId, shape, onSuccess = onImages, onError = { })
+                }
             }
         }
     }

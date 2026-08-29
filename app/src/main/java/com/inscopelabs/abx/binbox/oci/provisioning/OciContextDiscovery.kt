@@ -4,40 +4,40 @@ import com.inscopelabs.abx.binbox.oci.api.OciClient
 import com.inscopelabs.abx.binbox.oci.api.compartments.AvailabilityDomain
 import com.inscopelabs.abx.binbox.oci.api.compartments.Compartment
 import com.inscopelabs.abx.binbox.oci.api.compute.Image
+import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepContext
 
 /**
  * Populates the discoverable parts of [OciProvisioningContext] (§15-17):
  * compartments, availability domains, and Always-Free-eligible
- * shapes/images. Doesn't pick defaults or make selections itself — every
- * `selected*` field in [OciProvisioningContext] stays null/unset here;
- * that's the caller's (wizard UI's) job, same boundary [OciProvisioner]
- * already draws for the resolved context it consumes.
+ * shapes/images.
  */
 class OciContextDiscovery(private val client: OciClient) {
 
     /** ListCompartments under the tenancy (root). Includes the tenancy itself as an implicit "root" option — callers add that. */
     suspend fun fetchCompartments(tenancyOcid: String): OciResult<List<Compartment>> {
-        val response = client.identityApi.listCompartments(
-            compartmentId = tenancyOcid,
-            compartmentIdInSubtree = true
-        )
+        val response = OciStepContext.withStep(STAGE_ID, "discover_compartments") {
+            client.identityApi.listCompartments(
+                compartmentId = tenancyOcid,
+                compartmentIdInSubtree = true
+            )
+        }
         return response.toOciResult()
     }
 
     suspend fun fetchAvailabilityDomains(compartmentId: String): OciResult<List<AvailabilityDomain>> {
-        val response = client.identityApi.listAvailabilityDomains(compartmentId)
+        val response = OciStepContext.withStep(STAGE_ID, "discover_availability_domains") {
+            client.identityApi.listAvailabilityDomains(compartmentId)
+        }
         return response.toOciResult()
     }
 
     /**
-     * Shapes filtered to what [OciFreeTierShapes] knows about — the raw
-     * ListShapes response includes every paid shape too, which isn't
-     * useful noise for an Always-Free-focused wizard. Availability of a
-     * *listed* shape here is not the same as *capacity* for it — that's
-     * [ComputeProvisioner.checkCapacity]'s job, called later at launch time.
+     * Shapes filtered to what [OciFreeTierShapes] knows about.
      */
     suspend fun fetchEligibleShapes(compartmentId: String, availabilityDomain: String): OciResult<List<String>> {
-        val response = client.shapeApi.listShapes(compartmentId, availabilityDomain)
+        val response = OciStepContext.withStep(STAGE_ID, "list_shapes") {
+            client.shapeApi.listShapes(compartmentId, availabilityDomain)
+        }
         val result = response.toOciResult()
         return when (result) {
             is OciResult.Success -> OciResult.Success(
@@ -51,11 +51,17 @@ class OciContextDiscovery(private val client: OciClient) {
     }
 
     suspend fun fetchImages(compartmentId: String, shape: String): OciResult<List<Image>> {
-        val response = client.imageApi.listImages(compartmentId = compartmentId, shape = shape)
+        val response = OciStepContext.withStep(STAGE_ID, "list_images") {
+            client.imageApi.listImages(compartmentId = compartmentId, shape = shape)
+        }
         return response.toOciResult()
     }
 
     private fun <T> retrofit2.Response<T>.toOciResult(): OciResult<T> =
         if (isSuccessful && body() != null) OciResult.Success(body()!!)
         else OciResult.Error(OciApiErrorMapper.fromErrorResponse(this))
+
+    companion object {
+        const val STAGE_ID = "CONTEXT_DISCOVERY"
+    }
 }
