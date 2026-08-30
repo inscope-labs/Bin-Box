@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.inscopelabs.abx.binbox.oci.api.OciSigningInterceptor
 import com.inscopelabs.abx.binbox.oci.diagnostics.OciCallTraceStore
+import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepCallTagger
 import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepContext
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
 import com.inscopelabs.abx.binbox.oci.identity.OciFingerprint
@@ -66,6 +67,7 @@ class OciSigningInterceptorTest {
         )
 
         val client = OkHttpClient.Builder()
+            .eventListenerFactory(OciStepCallTagger)
             .addInterceptor(OciSigningInterceptor { testCredentials })
             .build()
 
@@ -105,6 +107,7 @@ class OciSigningInterceptorTest {
         )
 
         val client = OkHttpClient.Builder()
+            .eventListenerFactory(OciStepCallTagger)
             .addInterceptor(OciSigningInterceptor { testCredentials })
             .build()
 
