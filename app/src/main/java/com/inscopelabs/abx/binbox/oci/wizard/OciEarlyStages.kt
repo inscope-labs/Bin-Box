@@ -253,6 +253,7 @@ fun ApiKeyGenerationStage(
 fun ApiKeyRegistrationStage(
     publicKeyPem: String?,
     pendingFingerprint: String?,
+    expectedFingerprint: String?,
     error: String?,
     onSubmit: (String) -> Unit
 ) {
@@ -270,6 +271,14 @@ fun ApiKeyRegistrationStage(
         color = ImmersiveTextSecondary,
         fontSize = 13.sp
     )
+    expectedFingerprint?.let {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "This device's key fingerprint should read: $it — make sure that's what Oracle shows before pasting.",
+            color = ImmersiveTextMuted,
+            fontSize = 12.sp
+        )
+    }
     Spacer(Modifier.height(8.dp))
     LabeledField(
         "Fingerprint",

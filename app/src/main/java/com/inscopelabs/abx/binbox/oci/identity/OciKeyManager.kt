@@ -117,6 +117,23 @@ object OciKeyManager {
         }
     }
 
+    /** The actual OCI API key fingerprint for [alias]'s public key — MD5 digest of the
+     * DER-encoded (X.509 SubjectPublicKeyInfo) public key, lowercase colon-separated hex.
+     * This is exactly what `openssl rsa -pubout -outform DER -in key.pem | openssl md5 -c`
+     * computes, and matches what OCI's console displays after the key is uploaded — unlike
+     * [localPublicKeyDigest] above, this CAN be compared against a user-entered [OciFingerprint]
+     * to catch a mismatched/mistyped/stale paste before it ever reaches a signed request. */
+    fun computeOciFingerprint(alias: String): String? {
+        val bytes = try {
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            keyStore.getCertificate(alias)?.publicKey?.encoded
+        } catch (_: Throwable) {
+            null
+        } ?: fallbackKeyPairs[alias]?.public?.encoded ?: return null
+        val digest = MessageDigest.getInstance("MD5").digest(bytes)
+        return digest.joinToString(":") { "%02x".format(it) }
+    }
+
     private fun exportPublicKeyPem(keyStore: KeyStore, alias: String): String {
         val cert = keyStore.getCertificate(alias)
         val encoded = Base64.encodeToString(cert.publicKey.encoded, Base64.DEFAULT).trim()

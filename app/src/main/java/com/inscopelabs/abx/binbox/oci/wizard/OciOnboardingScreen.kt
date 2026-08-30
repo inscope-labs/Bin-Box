@@ -169,6 +169,11 @@ fun OciOnboardingScreen(
                         OciOnboardingStage.API_KEY_REGISTRATION -> ApiKeyRegistrationStage(
                             publicKeyPem = uiState.publicKeyPem,
                             pendingFingerprint = uiState.pendingFingerprint,
+                            expectedFingerprint = remember(uiState.pendingKeyAlias, uiState.credentials?.keyAlias) {
+                                (uiState.pendingKeyAlias ?: uiState.credentials?.keyAlias)?.let {
+                                    com.inscopelabs.abx.binbox.oci.identity.OciKeyManager.computeOciFingerprint(it)
+                                }
+                            },
                             error = uiState.error,
                             onSubmit = { fp -> viewModel.onEvent(OciOnboardingEvent.SubmitFingerprint(fp)) }
                         )

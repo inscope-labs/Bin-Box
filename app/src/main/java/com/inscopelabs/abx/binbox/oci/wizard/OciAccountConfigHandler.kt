@@ -68,6 +68,20 @@ class OciAccountConfigHandler {
             return
         }
 
+        // Catches a mismatched/mistyped/stale fingerprint paste here, with a clear message,
+        // instead of letting it through to fail opaquely as an OCI signature-verification
+        // error much later (during provisioning, several steps removed from where the actual
+        // mistake was made).
+        val actualFingerprint = OciKeyManager.computeOciFingerprint(alias)
+        if (actualFingerprint != null && actualFingerprint != fingerprint.value) {
+            BinBoxLogger.w(TAG, "Fingerprint mismatch: entered=${fingerprint.value}, actual key fingerprint=$actualFingerprint")
+            onError(
+                "That fingerprint doesn't match this device's signing key (expected $actualFingerprint). " +
+                    "Double-check you copied the fingerprint OCI showed for the key you just uploaded — not one from a previous attempt."
+            )
+            return
+        }
+
         val credentials = OciCredentials(state.tenancyOcid, state.userOcid, fingerprint, state.region, alias)
         BinBoxLogger.i(TAG, "Saving OCI credentials with fingerprint ${fingerprint.value}")
         when (val result = credentialsStore.save(credentials)) {

@@ -161,6 +161,59 @@ class OciOnboardingViewModelTest {
     }
 
     @Test
+    fun testComputeOciFingerprintMatchesMd5OfPublicKeyBytes() {
+        // Regression test for the "Failed to verify the HTTP(S) Signature" bug: OciFingerprint
+        // is free-text the user copies from the OCI console, with no way to catch a mistyped or
+        // stale paste before it reaches a signed request. computeOciFingerprint() is the fix —
+        // verify it actually computes what OCI computes: MD5 of the DER (X.509
+        // SubjectPublicKeyInfo) public key bytes, lowercase colon-separated hex — the same value
+        // `openssl rsa -pubout -outform DER -in key.pem | openssl md5 -c` produces.
+        val alias = "fingerprint_test_${UUID.randomUUID()}"
+        val pemResult = com.inscopelabs.abx.binbox.oci.identity.OciKeyManager.ensureSigningKey(alias)
+        check(pemResult is com.inscopelabs.abx.binbox.core.result.AppResult.Success)
+        val pem = pemResult.data
+
+        val der = java.util.Base64.getMimeDecoder().decode(
+            pem.replace("-----BEGIN PUBLIC KEY-----", "").replace("-----END PUBLIC KEY-----", "")
+        )
+        val expectedFingerprint = java.security.MessageDigest.getInstance("MD5").digest(der)
+            .joinToString(":") { "%02x".format(it) }
+
+        assertEquals(expectedFingerprint, com.inscopelabs.abx.binbox.oci.identity.OciKeyManager.computeOciFingerprint(alias))
+    }
+
+    @Test
+    fun testSubmitFingerprintRejectsMismatchedFingerprint() {
+        // A fingerprint that doesn't belong to this device's actual signing key must be caught
+        // here, with an actionable message, rather than silently saved and only surfacing much
+        // later as an opaque OCI signature-verification failure during provisioning.
+        val alias = "fingerprint_mismatch_test_${UUID.randomUUID()}"
+        com.inscopelabs.abx.binbox.oci.identity.OciKeyManager.ensureSigningKey(alias)
+
+        val handler = OciAccountConfigHandler()
+        val store = OciCredentialsStore(application, com.inscopelabs.abx.binbox.security.SecureStorageService(application))
+        val state = OciOnboardingUiState(
+            tenancyOcid = "ocid1.tenancy.oc1..aaaaaaaaompgipsy3qst3b3ecscsgr73ov6fvzxb72ozjgq4lmcexeizbrwq",
+            userOcid = "ocid1.user.oc1..aaaaaaaazcbems22m5rrebu3zhpzegqgxplr7gsrfcppgmojxdgmqjwfihxq",
+            region = "sa-saopaulo-1",
+            pendingKeyAlias = alias
+        )
+
+        var errorMessage: String? = null
+        handler.submitFingerprint(
+            raw = "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00", // definitely not this key's real fingerprint
+            state = state,
+            sessionId = "unused",
+            credentialsStore = store,
+            onSuccess = { _, _ -> throw AssertionError("Should not succeed with a mismatched fingerprint") },
+            onError = { err -> errorMessage = err }
+        )
+
+        assertNotNull(errorMessage)
+        assertTrue(errorMessage!!.contains("doesn't match"))
+    }
+
+    @Test
     fun testOciConfigParserWithUserFeedbackSnippet() {
         val snippet = """
             [DEFAULT]
