@@ -3,7 +3,7 @@ package com.inscopelabs.abx.binbox.oci.api
 import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
 import com.inscopelabs.abx.binbox.core.result.AppResult
 import com.inscopelabs.abx.binbox.oci.auth.OciRequestSigner
-import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepContext
+import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepCallTagger
 import com.inscopelabs.abx.binbox.oci.diagnostics.OciTraceRecorder
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
 import okhttp3.Interceptor
@@ -28,7 +28,11 @@ class OciSigningInterceptor(
         val original = chain.request()
         val timestampUtc = Instant.now().toString()
         val traceId = UUID.randomUUID().toString()
-        val (stageId, stepId) = OciStepContext.currentOrUnknown()
+        // Read via the tagged Call, not thread-ambient state: this interceptor runs on
+        // OkHttp's own dispatcher thread for Retrofit's enqueue()-based suspend calls,
+        // which is a different thread than whichever one called OciStepContext.withStep(...).
+        // See OciStepCallTagger's doc for why this is the only mechanism immune to that hop.
+        val (stageId, stepId) = OciStepCallTagger.stepFor(chain.call())
         val method = original.method
         val url = original.url.toString()
 

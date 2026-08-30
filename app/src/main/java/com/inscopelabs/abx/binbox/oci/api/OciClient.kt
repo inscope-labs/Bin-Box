@@ -9,6 +9,7 @@ import com.inscopelabs.abx.binbox.oci.api.networking.RouteTableApi
 import com.inscopelabs.abx.binbox.oci.api.networking.SubnetApi
 import com.inscopelabs.abx.binbox.oci.api.networking.VcnApi
 import com.inscopelabs.abx.binbox.oci.api.networking.VnicApi
+import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepCallTagger
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -41,6 +42,7 @@ class OciClient(
     private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
 
     private val okHttpClient = OkHttpClient.Builder()
+        .eventListenerFactory(OciStepCallTagger)
         .addInterceptor(OciSigningInterceptor(credentialsProvider))
         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
         .build()

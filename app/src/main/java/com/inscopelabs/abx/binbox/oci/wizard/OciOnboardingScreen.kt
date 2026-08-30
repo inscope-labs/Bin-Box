@@ -14,8 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.inscopelabs.abx.binbox.oci.diagnostics.OciCallTraceViewerDialog
 import com.inscopelabs.abx.binbox.ui.theme.*
 
 /**
@@ -42,6 +42,7 @@ fun OciOnboardingScreen(
     val stage by viewModel.stage.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showStartOverConfirm by remember { mutableStateOf(false) }
+    var showTraceViewer by remember { mutableStateOf(false) }
 
     LaunchedEffect(stage) {
         if (stage == OciOnboardingStage.SHELL_READY) onShellReady()
@@ -101,6 +102,8 @@ fun OciOnboardingScreen(
                             }
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Always visible on every stage — not gated behind an error state.
+                            IconButton(onClick = { showTraceViewer = true }, modifier = Modifier.testTag("oci_wizard_trace_viewer_icon")) { Icon(Icons.Default.BugReport, contentDescription = "API Call Traces", tint = ImmersiveTextSecondary) }
                             if (stage != OciOnboardingStage.WELCOME && stage != OciOnboardingStage.SHELL_READY) {
                                 IconButton(
                                     onClick = { showStartOverConfirm = true },
@@ -222,6 +225,8 @@ fun OciOnboardingScreen(
             }
         }
     }
+
+    if (showTraceViewer) OciCallTraceViewerDialog(onDismiss = { showTraceViewer = false })
 
     if (showStartOverConfirm) {
         AlertDialog(
