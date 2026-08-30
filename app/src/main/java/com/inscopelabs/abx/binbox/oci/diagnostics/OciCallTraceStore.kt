@@ -33,6 +33,31 @@ object OciCallTraceStore {
             }
             BinBoxLogger.i(TAG, "Initialized trace store for session: $currentSessionId")
         }
+        OciTraceSessionManager.pruneOldSessions(context)
+    }
+
+    fun getActiveSessionId(): String {
+        synchronized(lock) {
+            return currentSessionId
+        }
+    }
+
+    fun listSavedSessions(): List<OciTraceSessionInfo> {
+        val ctx = appContext ?: return emptyList()
+        return OciTraceSessionManager.listSavedSessions(ctx)
+    }
+
+    fun loadSession(sessionId: String): Boolean {
+        val ctx = appContext ?: return false
+        val file = File(OciTraceSessionManager.getTraceDir(ctx), "$sessionId.jsonl")
+        if (!file.exists()) return false
+        val loaded = OciTraceSessionManager.loadSessionEntries(file)
+        synchronized(lock) {
+            currentSessionId = sessionId
+            _entries.value = loaded
+            BinBoxLogger.i(TAG, "Switched active session to $sessionId with ${loaded.size} entries")
+        }
+        return true
     }
 
     fun startNewSession(sessionId: String = UUID.randomUUID().toString()) {
