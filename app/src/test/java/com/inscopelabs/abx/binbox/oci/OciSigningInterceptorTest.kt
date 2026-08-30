@@ -130,4 +130,40 @@ class OciSigningInterceptorTest {
         assertEquals("LimitExceeded", entry.ociErrorCode)
         assertEquals("Cannot create more VCNs", entry.ociErrorMessage)
     }
+
+    @Test
+    fun testMutatingRequestPreservesAndSignsWireContentType() {
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("{\"id\":\"ocid1.routetable.oc1..test\"}")
+        )
+
+        val client = OkHttpClient.Builder()
+            .eventListenerFactory(OciStepCallTagger)
+            .addInterceptor(OciSigningInterceptor { testCredentials })
+            .build()
+
+        val jsonBody = "{\"routeRules\":[{\"cidrBlock\":\"0.0.0.0/0\"}]}"
+        val request = Request.Builder()
+            .url(mockWebServer.url("/20160918/routeTables/ocid1.routetable.oc1..test"))
+            .put(jsonBody.toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+
+        val response = OciStepContext.withStep("NETWORK_PROVISIONING", "update_route_table") {
+            client.newCall(request).execute()
+        }
+
+        assertEquals(200, response.code)
+        response.close()
+
+        val recordedRequest = mockWebServer.takeRequest()
+        val authHeader = recordedRequest.getHeader("Authorization")
+        val contentTypeHeader = recordedRequest.getHeader("Content-Type")
+
+        assertNotNull(authHeader)
+        assertTrue(authHeader!!.startsWith("Signature "))
+        assertTrue(authHeader.contains("headers=\"(request-target) host date x-content-sha256 content-length content-type\""))
+        assertEquals("application/json; charset=utf-8", contentTypeHeader)
+    }
 }

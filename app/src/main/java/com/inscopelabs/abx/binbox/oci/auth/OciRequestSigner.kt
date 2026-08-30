@@ -37,13 +37,15 @@ object OciRequestSigner {
      * @param requestTargetPath path + query, e.g. "/20160918/instances?compartmentId=..."
      * @param host request host, e.g. "iaas.us-ashburn-1.oraclecloud.com"
      * @param body raw request body bytes; required (may be empty) for POST/PUT/PATCH, ignored otherwise
+     * @param contentType exact Content-Type header value sent on wire; defaults to "application/json" if unspecified
      */
     fun sign(
         credentials: OciCredentials,
         method: String,
         requestTargetPath: String,
         host: String,
-        body: ByteArray? = null
+        body: ByteArray? = null,
+        contentType: String? = null
     ): AppResult<OciSignatureHeaders> {
         val upperMethod = method.uppercase()
         val bodySigned = upperMethod in BODY_SIGNED_METHODS
@@ -57,7 +59,7 @@ object OciRequestSigner {
             val digest = MessageDigest.getInstance("SHA-256").digest(bodyBytes)
             headers["x-content-sha256"] = Base64.encodeToString(digest, Base64.NO_WRAP)
             headers["content-length"] = bodyBytes.size.toString()
-            headers["content-type"] = "application/json"
+            headers["content-type"] = contentType ?: "application/json"
         }
 
         val signedHeaderNames = buildList {

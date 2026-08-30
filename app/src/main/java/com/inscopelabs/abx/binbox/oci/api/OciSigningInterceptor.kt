@@ -56,12 +56,18 @@ class OciSigningInterceptor(
         val requestTarget = original.url.encodedPath +
             if (original.url.encodedQuery != null) "?${original.url.encodedQuery}" else ""
 
+        val rawContentType = original.body?.contentType()?.toString()
+            ?: original.header("Content-Type")
+            ?: original.header("content-type")
+            ?: "application/json"
+
         val signResult = OciRequestSigner.sign(
             credentials = credentials,
             method = original.method,
             requestTargetPath = requestTarget,
             host = original.url.host,
-            body = bodyBytes
+            body = bodyBytes,
+            contentType = rawContentType
         )
 
         val signed = when (signResult) {
