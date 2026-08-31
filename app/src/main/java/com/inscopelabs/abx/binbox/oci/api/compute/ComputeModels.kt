@@ -91,12 +91,15 @@ data class CreateComputeCapacityReportRequest(
 /** [availabilityStatus] is one of "AVAILABLE", "OUT_OF_HOST_CAPACITY", "HARDWARE_NOT_SUPPORTED". */
 data class CapacityReportShapeAvailability(
     val instanceShape: String,
-    val availabilityStatus: String
+    val availabilityStatus: String,
+    val availableCount: Long? = null,
+    val faultDomain: String? = null
 )
 
 data class ComputeCapacityReport(
-    val id: String,
-    val compartmentId: String,
-    val availabilityDomain: String,
-    val shapeAvailabilities: List<CapacityReportShapeAvailability>
+    val id: String? = null,
+    val compartmentId: String? = null,
+    val availabilityDomain: String? = null,
+    val shapeAvailabilities: List<CapacityReportShapeAvailability> = emptyList(),
+    val timeCreated: String? = null
 )

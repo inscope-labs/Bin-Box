@@ -144,7 +144,7 @@ class OciCallSiteInstrumentationTest {
     fun testComputeProvisionerCheckCapacityTracesRecorded() = runBlocking {
         mockWebServer.enqueue(
             MockResponse().setResponseCode(200).setBody(
-                "{\"id\":\"ocid1.report.oc1..test\",\"compartmentId\":\"ocid1.compartment.oc1..test\",\"availabilityDomain\":\"AD-1\",\"shapeAvailabilities\":[{\"instanceShape\":\"VM.Standard.A1.Flex\",\"availabilityStatus\":\"AVAILABLE\"}]}"
+                "{\"compartmentId\":\"ocid1.compartment.oc1..test\",\"availabilityDomain\":\"AD-1\",\"shapeAvailabilities\":[{\"instanceShape\":\"VM.Standard.A1.Flex\",\"availabilityStatus\":\"AVAILABLE\"}],\"timeCreated\":\"2026-08-30T19:58:47.000Z\"}"
             )
         )
 
