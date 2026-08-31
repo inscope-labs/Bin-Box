@@ -190,7 +190,7 @@ private fun ProvisioningStepRow(label: String, done: Boolean, active: Boolean) {
 }
 
 @Composable
-fun HostRegistrationStage(publicIp: String?, error: String?) {
+fun HostRegistrationStage(publicIp: String?, error: String?, onRetry: (() -> Unit)? = null) {
     StageHeader("Registering the host", "Adding the new VM to Bin Box's host list so you can connect from the Terminal tab.")
 
     publicIp?.let {
@@ -200,6 +200,10 @@ fun HostRegistrationStage(publicIp: String?, error: String?) {
 
     if (error != null) {
         ErrorBanner(error)
+        if (onRetry != null) {
+            Spacer(Modifier.height(16.dp))
+            PrimaryButton(text = "Retry", onClick = onRetry, modifier = Modifier.testTag("oci_retry_registration"))
+        }
     } else {
         LoadingRow("Registering…")
     }

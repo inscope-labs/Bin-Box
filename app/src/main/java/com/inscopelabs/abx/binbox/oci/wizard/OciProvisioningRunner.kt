@@ -69,7 +69,8 @@ class OciProvisioningRunner(
     ): AppResult<Long> {
         val instanceId = provisioned.instanceOcid ?: return AppResult.Error(AppError.UnexpectedError("Missing instance OCID"))
         val publicIp = provisioned.publicIp ?: return AppResult.Error(AppError.UnexpectedError("Missing public IP"))
-        val compartmentId = provisioned.context.selectedCompartmentOcid ?: return AppResult.Error(AppError.UnexpectedError("Missing compartment OCID"))
+        val compartmentId = provisioned.context.selectedCompartmentOcid
+            ?: credentials.tenancyOcid
 
         val selectedImage = discoveredImages.firstOrNull { it.id == provisioned.context.selectedImageOcid }
         val username = selectedImage?.operatingSystem?.let { defaultSshUsernameFor(it) } ?: "opc"

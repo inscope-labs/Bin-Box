@@ -49,7 +49,7 @@ class OciProvisioner(private val client: OciClient) {
         val imageId = context.selectedImageOcid
             ?: return OciResult.Error(missingSelection("image"))
 
-        var current = session.advance(OciProvisioningState.NETWORK_CREATING)
+        var current = session.copy(context = context).advance(OciProvisioningState.NETWORK_CREATING)
         onSessionUpdate(current)
 
         val networkResult = networkProvisioner.ensureNetwork(compartmentId, session.sessionId)

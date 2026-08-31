@@ -3,11 +3,18 @@ package com.inscopelabs.abx.binbox.oci
 import android.app.Application
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ApplicationProvider
+import com.inscopelabs.abx.binbox.data.database.AppDatabase
+import com.inscopelabs.abx.binbox.data.repository.HostRepositoryImpl
+import com.inscopelabs.abx.binbox.data.repository.KeyRepositoryImpl
+import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentialsStore
+import com.inscopelabs.abx.binbox.oci.identity.OciFingerprint
+import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningContext
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningRepository
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningSession
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningState
 import com.inscopelabs.abx.binbox.oci.wizard.*
+import com.inscopelabs.abx.binbox.security.SecureStorageService
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -266,5 +273,32 @@ class OciOnboardingViewModelTest {
         assertTrue(report.contains("HTTP Status: 401"))
         assertTrue(report.contains("Troubleshooting Guidance"))
         assertTrue(diagnostics.isAuthError)
+    }
+
+    @Test
+    fun testRegisterHostFallbackToTenancyWhenCompartmentNull() = kotlinx.coroutines.runBlocking {
+        val creds = OciCredentials(
+            tenancyOcid = "ocid1.tenancy.oc1..testroot",
+            userOcid = "ocid1.user.oc1..testuser",
+            fingerprint = OciFingerprint("8c:00:4d:b0:7e:87:43:a2:dc:d0:2c:ac:b2:42:48:5a"),
+            region = "sa-saopaulo-1",
+            keyAlias = "test-alias"
+        )
+        val now = System.currentTimeMillis()
+        val session = OciProvisioningSession(
+            sessionId = "test-session-123",
+            state = OciProvisioningState.PUBLIC_IP_DISCOVERED,
+            instanceOcid = "ocid1.instance.oc1..testinst",
+            publicIp = "129.148.0.1",
+            createdAtMillis = now,
+            updatedAtMillis = now,
+            context = OciProvisioningContext(selectedCompartmentOcid = null)
+        )
+        val runner = OciProvisioningRunner(
+            keyRepository = KeyRepositoryImpl(AppDatabase.getInstance(application).keyDao(), SecureStorageService(application)),
+            hostRepository = HostRepositoryImpl(AppDatabase.getInstance(application).hostDao(), SecureStorageService(application))
+        )
+        val res = runner.registerHost(creds, session, emptyList())
+        assertTrue("Registration with tenancy fallback should succeed: $res", res is com.inscopelabs.abx.binbox.core.result.AppResult.Success)
     }
 }

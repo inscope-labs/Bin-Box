@@ -125,6 +125,12 @@ class OciOnboardingViewModel @JvmOverloads constructor(
             OciOnboardingEvent.Cancel -> persistSessionState(OciProvisioningState.CANCELLED)
             OciOnboardingEvent.ContinueToKeyRegistration -> advanceTo(OciOnboardingStage.API_KEY_REGISTRATION)
             OciOnboardingEvent.ResumeSession -> resumeSession()
+            OciOnboardingEvent.RetryRegistration -> {
+                val creds = _uiState.value.credentials
+                if (creds != null) {
+                    viewModelScope.launch { registerHost(creds, session) }
+                }
+            }
         }
     }
 

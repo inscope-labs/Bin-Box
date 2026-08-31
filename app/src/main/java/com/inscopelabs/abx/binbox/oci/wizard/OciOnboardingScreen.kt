@@ -219,7 +219,8 @@ fun OciOnboardingScreen(
                         )
                         OciOnboardingStage.HOST_REGISTRATION -> HostRegistrationStage(
                             publicIp = uiState.provisionedPublicIp,
-                            error = uiState.error
+                            error = uiState.error,
+                            onRetry = { viewModel.onEvent(OciOnboardingEvent.RetryRegistration) }
                         )
                         OciOnboardingStage.SHELL_READY -> ShellReadyStage(
                             publicIp = uiState.provisionedPublicIp,

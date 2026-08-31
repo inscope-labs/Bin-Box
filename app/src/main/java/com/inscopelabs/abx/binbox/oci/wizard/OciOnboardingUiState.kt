@@ -28,6 +28,8 @@ sealed class OciOnboardingEvent {
     data object ContinueToKeyRegistration : OciOnboardingEvent()
     /** User chose to resume a persisted in-progress session found on launch. */
     data object ResumeSession : OciOnboardingEvent()
+    /** Retry host registration if step failed. */
+    data object RetryRegistration : OciOnboardingEvent()
 }
 
 data class OciOnboardingUiState(
