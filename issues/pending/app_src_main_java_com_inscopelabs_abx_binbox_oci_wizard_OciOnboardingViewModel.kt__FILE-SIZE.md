@@ -1,8 +1,0 @@
-# Issue: File Size (> 300 Lines)
-
-- **File Path**: `app/src/main/java/com/inscopelabs/abx/binbox/oci/wizard/OciOnboardingViewModel.kt`
-- **Issue Type**: `FILE-SIZE`
-- **Reason**: File is back over the 300-line threshold (368 lines) after fixing three real bugs reported by the user (stuck "Starting…" progress screen, back-navigation dead end at API_KEY_GENERATION, no resume support across process death) plus the newly-added resume-or-start-over flow and selection-change invalidation. This file previously had a resolved FILE-SIZE issue on the same date; this is a regression caused by necessary new functionality, not a reopening of the same root cause.
-- **Date Flagged**: 2026-08-27
-- **Mitigation already applied in this pass**: extracted three new modules to keep growth in check — `OciResumeHandler.kt` (session-resume orchestration), `OciHostConfigSelectionHandler.kt` (pure compartment/AD/shape/image selection transitions), `OciProvisioningInvalidation.kt` (pure downstream-invalidation transitions). Without these the file would be ~460+ lines. A further extraction (moving `generateVmSshKey`/`startProvisioning`/`registerHost` into a dedicated provisioning-flow module) was attempted and reverted in this same pass — it changed session-state-advancement semantics on the registration success path in a way that risked a subtle regression, and correctness was prioritized over the line-count target for this push.
-- **Recommendation**: A follow-up restructuring pass should extract the VM-SSH-key -> provisioning -> host-registration chain into its own module, carefully preserving the exact session/stage-advancement sequencing (`advanceTo(SSH_VERIFICATION)` on provisioning success, `persistSessionState(SHELL_READY)` only after registration also succeeds).

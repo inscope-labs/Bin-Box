@@ -42,4 +42,11 @@ interface ComputeApi {
         @Query("compartmentId") compartmentId: String,
         @Query("instanceId") instanceId: String
     ): Response<List<VnicAttachment>>
+
+    /** Lists existing instances in a compartment to detect previously created VMs. */
+    @GET("20160918/instances")
+    suspend fun listInstances(
+        @Query("compartmentId") compartmentId: String,
+        @Query("lifecycleState") lifecycleState: String? = null
+    ): Response<List<Instance>>
 }

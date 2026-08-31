@@ -7,6 +7,7 @@
 - **Source Report**: `agent-reports/2026-08-27T081500Z-fix-oci-viewmodel-instantiation.md`
 
 ## RESOLVED
-- **Resolution Date**: 2026-08-27
-- **Resolving Agent Report**: `agent-reports/2026-08-27T140000Z-oci-wizard-assisted-navigation-diagnostics.md`
-- **Fix Note**: Restructured `OciOnboardingViewModel.kt` and `OciOnboardingScreen.kt` into single-responsibility orchestrators and discrete domain modules (`OciConfigParser.kt`, `OciRegionHelper.kt`, `OciVerificationDiagnostics.kt`, `OciOnboardingUiState.kt`, `OciWizardComponents.kt`, `OciEarlyStages.kt`, `OciVerificationStages.kt`, `OciProvisioningStages.kt`). All resulting files are compliant with AGENTS.md rules.
+- **Resolution Date**: 2026-08-31
+- **Resolving Agent Report**: `agent-reports/2026-08-31T114500Z-oci-existing-instance-discovery-and-credentials-backup.md`
+- **Fix Note**: Extracted `OciProvisioningExecutionHandler.kt` and streamlined event orchestration, bringing `OciOnboardingViewModel.kt` down to 285 lines (< 300L threshold) and strictly fulfilling the Orchestrator role.
+

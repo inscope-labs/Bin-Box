@@ -6,6 +6,7 @@ import com.inscopelabs.abx.binbox.oci.api.OciApiConfig
 import com.inscopelabs.abx.binbox.oci.api.OciClient
 import com.inscopelabs.abx.binbox.oci.api.compartments.Compartment
 import com.inscopelabs.abx.binbox.oci.api.compute.Image
+import com.inscopelabs.abx.binbox.oci.api.compute.Instance
 import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepContext
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
 import com.inscopelabs.abx.binbox.oci.identity.OciKeyManager
@@ -78,7 +79,7 @@ class OciEnvironmentDiscoveryHandler(
         client: OciClient,
         credentials: OciCredentials,
         currentPublicKeyPem: String?,
-        onSuccess: (List<Compartment>, List<String>) -> Unit,
+        onSuccess: (List<Compartment>, List<String>, List<Instance>) -> Unit,
         onError: (String, OciVerificationDiagnostics) -> Unit
     ) {
         val endpointUrl = "${OciApiConfig.identityBaseUrl(credentials.region)}20160918/compartments?compartmentId=${credentials.tenancyOcid}"
@@ -91,8 +92,9 @@ class OciEnvironmentDiscoveryHandler(
         when (val res = provisioningRunner.discoverContext(client, credentials.tenancyOcid)) {
             is OciResult.Success -> {
                 val (compartments, ads) = res.data
-                BinBoxLogger.i(TAG, "Discovered ${compartments.size} compartments and ${ads.size} ADs")
-                onSuccess(compartments, ads)
+                val existingInstances = discoverExistingInstances(client, credentials.tenancyOcid)
+                BinBoxLogger.i(TAG, "Discovered ${compartments.size} compartments, ${ads.size} ADs, and ${existingInstances.size} existing instances")
+                onSuccess(compartments, ads, existingInstances)
             }
             is OciResult.Error -> {
                 val apiError = res.error
@@ -142,6 +144,17 @@ class OciEnvironmentDiscoveryHandler(
             is OciResult.Error -> {
                 BinBoxLogger.w(TAG, "Failed fetching images: ${result.error.whatHappened}")
                 onError(result.error.whatHappened)
+            }
+        }
+    }
+
+    suspend fun discoverExistingInstances(client: OciClient, compartmentOcid: String): List<Instance> {
+        BinBoxLogger.i(TAG, "Checking existing compute instances in $compartmentOcid")
+        return when (val res = provisioningRunner.discoverExistingInstances(client, compartmentOcid)) {
+            is OciResult.Success -> res.data
+            is OciResult.Error -> {
+                BinBoxLogger.w(TAG, "Existing instance query returned: ${res.error.whatHappened}")
+                emptyList()
             }
         }
     }

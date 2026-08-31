@@ -9,6 +9,7 @@ import com.inscopelabs.abx.binbox.domain.model.SshKey
 import com.inscopelabs.abx.binbox.oci.api.OciClient
 import com.inscopelabs.abx.binbox.oci.api.compartments.Compartment
 import com.inscopelabs.abx.binbox.oci.api.compute.Image
+import com.inscopelabs.abx.binbox.oci.api.compute.Instance
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
 import com.inscopelabs.abx.binbox.oci.provisioning.*
 import com.inscopelabs.abx.binbox.oci.terminal.OciHostRegistrar
@@ -38,6 +39,11 @@ class OciProvisioningRunner(
         val compartments = (compRes as OciResult.Success).data
         val ads = (adRes as OciResult.Success).data.map { it.name }
         return OciResult.Success(Pair(compartments, ads))
+    }
+
+    suspend fun discoverExistingInstances(client: OciClient, compartmentId: String): OciResult<List<Instance>> {
+        BinBoxLogger.i(TAG, "Discovering existing compute instances in compartment $compartmentId")
+        return OciContextDiscovery(client).fetchExistingInstances(compartmentId)
     }
 
     /** Resolves the VM SSH public key (preferring [vmSshPublicKeyOverride], falling back to the

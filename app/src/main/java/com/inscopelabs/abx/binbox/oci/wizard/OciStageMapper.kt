@@ -33,6 +33,7 @@ object OciStageMapper {
         OciOnboardingStage.API_KEY_REGISTRATION -> OciOnboardingStage.API_KEY_GENERATION
         OciOnboardingStage.CONNECTION_VERIFICATION -> OciOnboardingStage.API_KEY_REGISTRATION
         OciOnboardingStage.OCI_CONTEXT_DISCOVERY,
+        OciOnboardingStage.EXISTING_INSTANCE_PROMPT -> OciOnboardingStage.CONNECTION_VERIFICATION
         OciOnboardingStage.HOST_CONFIGURATION -> OciOnboardingStage.CONNECTION_VERIFICATION
         OciOnboardingStage.NETWORK_PROVISIONING,
         OciOnboardingStage.SSH_KEY_GENERATION,

@@ -193,6 +193,11 @@ fun OciOnboardingScreen(
                             diagnostics = uiState.diagnostics,
                             onDiscover = { viewModel.onEvent(OciOnboardingEvent.DiscoverContext) }
                         )
+                        OciOnboardingStage.EXISTING_INSTANCE_PROMPT -> ExistingInstancePromptStage(
+                            instances = uiState.discoveredExistingInstances,
+                            onUseExisting = onDismiss,
+                            onProvisionSecond = { viewModel.onEvent(OciOnboardingEvent.ProceedToHostConfig) }
+                        )
                         OciOnboardingStage.HOST_CONFIGURATION -> HostConfigurationStage(
                             uiState = uiState,
                             onSelectCompartment = { viewModel.onEvent(OciOnboardingEvent.SelectCompartment(it)) },
@@ -224,6 +229,8 @@ fun OciOnboardingScreen(
                         )
                         OciOnboardingStage.SHELL_READY -> ShellReadyStage(
                             publicIp = uiState.provisionedPublicIp,
+                            username = uiState.vmSshUsername,
+                            privateKey = uiState.vmSshPrivateKey,
                             onFinish = onShellReady
                         )
                     }
@@ -295,6 +302,7 @@ private fun stageLabel(stage: OciOnboardingStage): String = when (stage) {
     OciOnboardingStage.API_KEY_REGISTRATION -> "Step 3 of 12 — Register key"
     OciOnboardingStage.CONNECTION_VERIFICATION -> "Step 4 of 12 — Verify connection"
     OciOnboardingStage.OCI_CONTEXT_DISCOVERY -> "Step 5 of 12 — Discover environment"
+    OciOnboardingStage.EXISTING_INSTANCE_PROMPT -> "Existing VM detected"
     OciOnboardingStage.HOST_CONFIGURATION -> "Step 6 of 12 — Configure host"
     OciOnboardingStage.NETWORK_PROVISIONING -> "Step 7 of 12 — Networking"
     OciOnboardingStage.SSH_KEY_GENERATION -> "Step 8 of 12 — VM SSH key"

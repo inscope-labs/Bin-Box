@@ -7,11 +7,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -210,33 +212,117 @@ fun HostRegistrationStage(publicIp: String?, error: String?, onRetry: (() -> Uni
 }
 
 @Composable
-fun ShellReadyStage(publicIp: String?, onFinish: () -> Unit) {
+fun ShellReadyStage(
+    publicIp: String?,
+    username: String? = "opc",
+    privateKey: String? = null,
+    onFinish: () -> Unit
+) {
+    val clipboardManager = LocalClipboardManager.current
+    var copiedKey by remember { mutableStateOf(false) }
+    var copiedDetails by remember { mutableStateOf(false) }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(64.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .size(56.dp)
+                .clip(RoundedCornerShape(14.dp))
                 .background(ImmersiveStatusGreen)
         ) {
-            Icon(Icons.Default.Check, contentDescription = null, tint = ImmersiveOnPrimary, modifier = Modifier.size(32.dp))
+            Icon(Icons.Default.Check, contentDescription = null, tint = ImmersiveOnPrimary, modifier = Modifier.size(28.dp))
         }
-        Spacer(Modifier.height(20.dp))
-        Text("Your VM is ready", color = ImmersiveTextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(16.dp))
+        Text("Your VM is ready", color = ImmersiveTextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(6.dp))
         Text(
             "It's been added to your hosts list. If the first connection attempt times out, give the instance another minute to finish initial cloud-init boot.",
             color = ImmersiveTextSecondary,
-            fontSize = 14.sp,
-            lineHeight = 20.sp
+            fontSize = 13.sp,
+            lineHeight = 18.sp
         )
-        publicIp?.let {
-            Spacer(Modifier.height(16.dp))
-            InfoCard(icon = Icons.Default.Dns, title = "Public IP", body = it)
+
+        publicIp?.let { ip ->
+            Spacer(Modifier.height(14.dp))
+            InfoCard(icon = Icons.Default.Dns, title = "Public IP", body = ip)
         }
+
+        Spacer(Modifier.height(14.dp))
+
+        // Save Authentication Info Card
+        Surface(
+            color = ImmersiveSurfaceElevated,
+            shape = RoundedCornerShape(12.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, ImmersiveBorderSubtle),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Security, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Save your authentication info", color = CyanAccent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "If you ever clear app data or reinstall BinBox, the local SSH private key will be deleted. Save these credentials in a safe place so you can reconnect anytime from '+ New Host' on the Hosts tab.",
+                    color = ImmersiveTextSecondary,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Username: ${username ?: "opc"} • Port: 22",
+                    color = ImmersiveTextPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (privateKey != null) {
+                        OutlinedButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(privateKey))
+                                copiedKey = true
+                            },
+                            modifier = Modifier.weight(1f).testTag("oci_copy_private_key_btn"),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ImmersiveTextPrimary)
+                        ) {
+                            Icon(Icons.Default.VpnKey, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (copiedKey) "Key Copied!" else "Copy Private Key", fontSize = 11.sp)
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            val details = buildString {
+                                appendLine("Host: ${publicIp ?: "unknown"}")
+                                appendLine("User: ${username ?: "opc"}")
+                                appendLine("Port: 22")
+                                if (privateKey != null) {
+                                    appendLine("Private Key:")
+                                    appendLine(privateKey)
+                                }
+                            }
+                            clipboardManager.setText(AnnotatedString(details))
+                            copiedDetails = true
+                        },
+                        modifier = Modifier.weight(1f).testTag("oci_copy_details_btn"),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = ImmersiveTextPrimary)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (copiedDetails) "Details Copied!" else "Copy All Details", fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+
         Spacer(Modifier.weight(1f, fill = false))
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
         PrimaryButton(text = "Go to hosts", onClick = onFinish, modifier = Modifier.testTag("oci_finish"))
     }
 }

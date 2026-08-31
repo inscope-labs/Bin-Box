@@ -4,6 +4,7 @@ import com.inscopelabs.abx.binbox.oci.api.OciClient
 import com.inscopelabs.abx.binbox.oci.api.compartments.AvailabilityDomain
 import com.inscopelabs.abx.binbox.oci.api.compartments.Compartment
 import com.inscopelabs.abx.binbox.oci.api.compute.Image
+import com.inscopelabs.abx.binbox.oci.api.compute.Instance
 import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepContext
 
 /**
@@ -55,6 +56,19 @@ class OciContextDiscovery(private val client: OciClient) {
             client.imageApi.listImages(compartmentId = compartmentId, shape = shape)
         }
         return response.toOciResult()
+    }
+
+    suspend fun fetchExistingInstances(compartmentId: String): OciResult<List<Instance>> {
+        val response = OciStepContext.withStep(STAGE_ID, "list_existing_instances") {
+            client.computeApi.listInstances(compartmentId = compartmentId)
+        }
+        val result = response.toOciResult()
+        return when (result) {
+            is OciResult.Success -> OciResult.Success(
+                result.data.filter { it.lifecycleState !in setOf("TERMINATED", "TERMINATING") }
+            )
+            is OciResult.Error -> result
+        }
     }
 
     private fun <T> retrofit2.Response<T>.toOciResult(): OciResult<T> =

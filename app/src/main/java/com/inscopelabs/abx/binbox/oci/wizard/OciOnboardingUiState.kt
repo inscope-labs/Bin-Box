@@ -2,6 +2,7 @@ package com.inscopelabs.abx.binbox.oci.wizard
 
 import com.inscopelabs.abx.binbox.oci.api.compartments.Compartment
 import com.inscopelabs.abx.binbox.oci.api.compute.Image
+import com.inscopelabs.abx.binbox.oci.api.compute.Instance
 import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningContext
 import com.inscopelabs.abx.binbox.oci.provisioning.OciProvisioningState
@@ -15,6 +16,8 @@ sealed class OciOnboardingEvent {
     data object VerifyConnection : OciOnboardingEvent()
     data object GenerateVmSshKey : OciOnboardingEvent()
     data object DiscoverContext : OciOnboardingEvent()
+    data object ProceedToHostConfig : OciOnboardingEvent()
+    data object UseExistingHost : OciOnboardingEvent()
     data class SelectCompartment(val compartmentOcid: String) : OciOnboardingEvent()
     data class SelectAvailabilityDomain(val availabilityDomain: String) : OciOnboardingEvent()
     data class SelectShape(val shape: String) : OciOnboardingEvent()
@@ -43,12 +46,15 @@ data class OciOnboardingUiState(
     val isVerifying: Boolean = false,
     val isGeneratingVmSshKey: Boolean = false,
     val vmSshPublicKey: String? = null,
+    val vmSshPrivateKey: String? = null,
+    val vmSshUsername: String? = null,
     val context: OciProvisioningContext = OciProvisioningContext(),
     val isDiscovering: Boolean = false,
     val discoveredCompartments: List<Compartment> = emptyList(),
     val discoveredAvailabilityDomains: List<String> = emptyList(),
     val discoveredShapes: List<String> = emptyList(),
     val discoveredImages: List<Image> = emptyList(),
+    val discoveredExistingInstances: List<Instance> = emptyList(),
     val isProvisioning: Boolean = false,
     val provisioningState: OciProvisioningState? = null,
     val provisionedPublicIp: String? = null,

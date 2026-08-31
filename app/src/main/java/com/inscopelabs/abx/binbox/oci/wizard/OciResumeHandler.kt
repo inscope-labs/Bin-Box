@@ -93,7 +93,11 @@ class OciResumeHandler(
         onError: (String, OciVerificationDiagnostics) -> Unit
     ) {
         com.inscopelabs.abx.binbox.oci.diagnostics.OciStepContext.withStep("RESUME", "rediscover_environment") {
-            discoveryHandler.discoverContext(client, credentials, currentPublicKeyPem, onSuccess = onCompartments, onError = onError)
+            discoveryHandler.discoverContext(
+                client, credentials, currentPublicKeyPem,
+                onSuccess = { compartments, ads, _ -> onCompartments(compartments, ads) },
+                onError = onError
+            )
 
             val compId = context.selectedCompartmentOcid
             val ad = context.selectedAvailabilityDomain
