@@ -107,7 +107,7 @@ class DiagnosticsAndSecurityTest {
         val ecKey = (ecResult as AppResult.Success).data
         assertEquals("test_ecdsa", ecKey.title)
         assertTrue(ecKey.publicKey.startsWith("ecdsa-sha2-nistp256 AAA"))
-        assertTrue(ecKey.privateKey.contains("BEGIN EC PRIVATE KEY"))
+        assertTrue(ecKey.privateKey.contains("BEGIN PRIVATE KEY"))
         assertTrue(ecKey.fingerprint.startsWith("SHA256:"))
     }
 

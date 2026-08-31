@@ -24,7 +24,7 @@ object SshKeyManager {
 
             val privateKeyPem = buildString {
                 append("-----BEGIN RSA PRIVATE KEY-----\n")
-                append(Base64.encodeToString(kp.private.encoded, Base64.DEFAULT).trim())
+                append(Base64.encodeToString(pkcs8ToPkcs1(kp.private.encoded), Base64.DEFAULT).trim())
                 append("\n-----END RSA PRIVATE KEY-----\n")
             }
 
@@ -75,9 +75,9 @@ object SshKeyManager {
             val kp = kpg.generateKeyPair()
 
             val privateKeyPem = buildString {
-                append("-----BEGIN EC PRIVATE KEY-----\n")
+                append("-----BEGIN PRIVATE KEY-----\n")
                 append(Base64.encodeToString(kp.private.encoded, Base64.DEFAULT).trim())
-                append("\n-----END EC PRIVATE KEY-----\n")
+                append("\n-----END PRIVATE KEY-----\n")
             }
 
             val ecPub = kp.public as ECPublicKey
@@ -150,5 +150,37 @@ object SshKeyManager {
         } catch (_: Throwable) {
             "SHA256:unknown"
         }
+    }
+
+    /**
+     * Extracts the traditional PKCS#1 RSAPrivateKey DER bytes from a PKCS#8-encoded
+     * key (what JCA's PrivateKey.getEncoded() always returns for RSA). The PKCS#8
+     * structure is SEQUENCE(version INTEGER, AlgorithmIdentifier SEQUENCE, OCTET
+     * STRING(<the PKCS#1 DER, verbatim>)) — this walks that structure and returns
+     * the OCTET STRING content, which is byte-for-byte what belongs under a
+     * "-----BEGIN RSA PRIVATE KEY-----" header.
+     */
+    private fun pkcs8ToPkcs1(pkcs8: ByteArray): ByteArray {
+        var pos = 0
+        fun readLen(): Int {
+            val first = pkcs8[pos++].toInt() and 0xFF
+            if (first < 0x80) return first
+            var len = 0
+            repeat(first and 0x7F) { len = (len shl 8) or (pkcs8[pos++].toInt() and 0xFF) }
+            return len
+        }
+        fun skipValue() {
+            val len = readLen()
+            pos += len
+        }
+        require((pkcs8[pos++].toInt() and 0xFF) == 0x30) { "PKCS#8: expected outer SEQUENCE" }
+        readLen()
+        require((pkcs8[pos++].toInt() and 0xFF) == 0x02) { "PKCS#8: expected version INTEGER" }
+        skipValue()
+        require((pkcs8[pos++].toInt() and 0xFF) == 0x30) { "PKCS#8: expected AlgorithmIdentifier SEQUENCE" }
+        skipValue()
+        require((pkcs8[pos++].toInt() and 0xFF) == 0x04) { "PKCS#8: expected OCTET STRING" }
+        val len = readLen()
+        return pkcs8.copyOfRange(pos, pos + len)
     }
 }
