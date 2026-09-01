@@ -54,6 +54,7 @@ fun HostsScreen(
     var selectedGroupFilter by remember { mutableStateOf("All") }
     var showAddEditDialog by remember { mutableStateOf(false) }
     var hostToEdit by remember { mutableStateOf<HostEntity?>(null) }
+    var hostToDelete by remember { mutableStateOf<HostEntity?>(null) }
     var showQuickConnect by remember { mutableStateOf(false) }
 
     val groupTags = listOf("All", "Favorites", "Workspace (${activeWorkspace.name})", "Cloud", "HomeLab", "Production", "Local", "IoT")
@@ -330,7 +331,7 @@ fun HostsScreen(
                                 hostToEdit = host
                                 showAddEditDialog = true
                             },
-                            onDelete = { viewModel.deleteHost(host) }
+                            onDelete = { hostToDelete = host }
                         )
                     }
                 }
@@ -351,6 +352,18 @@ fun HostsScreen(
             onLaunchOciWizard = {
                 showAddEditDialog = false
                 launchOci()
+            }
+        )
+    }
+
+    // Irrevocable Host Deletion Confirmation Dialog
+    hostToDelete?.let { host ->
+        DeleteHostConfirmationDialog(
+            host = host,
+            onDismiss = { hostToDelete = null },
+            onConfirm = {
+                viewModel.deleteHost(host)
+                hostToDelete = null
             }
         )
     }
@@ -558,6 +571,7 @@ fun HostCard(
                             .size(34.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(ImmersiveComponent)
+                            .testTag("delete_host_button_${host.id}")
                     ) {
                         Icon(Icons.Default.DeleteOutline, "Delete", tint = ImmersiveStatusRed.copy(alpha = 0.8f), modifier = Modifier.size(16.dp))
                     }

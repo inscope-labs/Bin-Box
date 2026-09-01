@@ -3,6 +3,7 @@ package com.inscopelabs.abx.binbox.ui
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import com.inscopelabs.abx.binbox.core.result.AppResult
+import com.inscopelabs.abx.binbox.data.entity.HostEntity
 import com.inscopelabs.abx.binbox.domain.model.AuthType
 import com.inscopelabs.abx.binbox.domain.model.CommandHistory
 import com.inscopelabs.abx.binbox.domain.model.ConnectionProfile
@@ -324,6 +325,19 @@ class BinBoxViewModelTest {
 
         viewModel.closeSession(0)
         assertEquals(initialSize, viewModel.sessions.value.size)
+    }
+
+    @Test
+    fun deleteHost_removesHostAndShowsSnackbar() = runTest {
+        val testHost = HostEntity(
+            id = 1L,
+            label = "Test Server",
+            host = "test.server.local",
+            protocol = "SSH"
+        )
+        viewModel.deleteHost(testHost)
+        testScheduler.advanceUntilIdle()
+        assertEquals("Deleted host: Test Server", viewModel.snackbarMessage.value)
     }
 
     @Test

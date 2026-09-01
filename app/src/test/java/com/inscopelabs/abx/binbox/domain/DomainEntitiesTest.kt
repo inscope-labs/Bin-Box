@@ -164,4 +164,18 @@ class DomainEntitiesTest {
         assertEquals("htop", domainHistory.command)
         assertEquals(historyEntity, domainHistory.toEntity())
     }
+
+    @Test
+    fun testDeleteHostChallengeWordsGeneration() {
+        val host1 = HostEntity(id = 1L, label = "Host A", host = "1.2.3.4", protocol = "SSH")
+        val host2 = HostEntity(id = 2L, label = "Host B", host = "1.2.3.5", protocol = "SSH")
+
+        val words1 = com.inscopelabs.abx.binbox.ui.components.getChallengeWordsForHost(host1)
+        val words2 = com.inscopelabs.abx.binbox.ui.components.getChallengeWordsForHost(host2)
+
+        assertTrue(words1.isNotBlank())
+        assertEquals(2, words1.split(" ").size)
+        assertTrue(words2.isNotBlank())
+        assertEquals(2, words2.split(" ").size)
+    }
 }

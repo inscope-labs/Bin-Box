@@ -55,8 +55,11 @@ class HostRepositoryImpl(
 
     override suspend fun deleteHost(profile: ConnectionProfile): AppResult<Unit> = withContext(dispatchers.io) {
         try {
-            hostDao.deleteHost(profile.withEncryptedSecrets().toEntity())
-            BinBoxLogger.d("HostRepository", "Host deleted: ${profile.label}")
+            val rowsDeleted = hostDao.deleteHostById(profile.id)
+            if (rowsDeleted == 0) {
+                hostDao.deleteHost(profile.withEncryptedSecrets().toEntity())
+            }
+            BinBoxLogger.d("HostRepository", "Host deleted: ${profile.label} (ID: ${profile.id})")
             AppResult.Success(Unit)
         } catch (e: Throwable) {
             BinBoxLogger.e("HostRepository", "Failed to delete host: ${profile.label}", e)

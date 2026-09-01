@@ -847,11 +847,28 @@ class BinBoxViewModel(
 
     fun deleteHost(host: HostEntity) {
         viewModelScope.launch {
+            BinBoxLogger.i("BinBoxViewModel", "Deleting host profile: ${host.label} (ID: ${host.id})")
             val result = hostUseCases.deleteHost(host.toDomain())
             if (result is AppResult.Success) {
+                val currentWorkspaces = _workspaces.value
+                val updatedWorkspaces = currentWorkspaces.map { ws ->
+                    if (ws.hostProfileIds.contains(host.id)) {
+                        ws.copy(hostProfileIds = ws.hostProfileIds.filter { it != host.id })
+                    } else {
+                        ws
+                    }
+                }
+                _workspaces.value = updatedWorkspaces
+                if (_activeWorkspace.value.hostProfileIds.contains(host.id)) {
+                    _activeWorkspace.value = _activeWorkspace.value.copy(
+                        hostProfileIds = _activeWorkspace.value.hostProfileIds.filter { it != host.id }
+                    )
+                }
                 showSnackbar("Deleted host: ${host.label}")
+                BinBoxLogger.i("BinBoxViewModel", "Host successfully deleted: ${host.label}")
             } else if (result is AppResult.Error) {
                 showSnackbar("Failed to delete host: ${result.error.userMessage}")
+                BinBoxLogger.e("BinBoxViewModel", "Failed to delete host: ${host.label} - ${result.error.userMessage}")
             }
         }
     }

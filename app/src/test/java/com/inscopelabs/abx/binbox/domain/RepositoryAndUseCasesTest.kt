@@ -106,6 +106,13 @@ class RepositoryAndUseCasesTest {
         val pingResult = hostRepo.pingHost(localProfile)
         assertTrue(pingResult.isSuccess)
         assertEquals(1L, pingResult.getOrNull())
+
+        // Delete Host Use Case
+        val deleteHostUseCase = com.inscopelabs.abx.binbox.domain.usecase.DeleteHostUseCase(hostRepo)
+        val deleteResult = deleteHostUseCase(profile.copy(id = hostId))
+        assertTrue(deleteResult.isSuccess)
+        val remainingHosts = getHostsUseCase().first()
+        assertTrue(remainingHosts.isEmpty())
     }
 
     @Test

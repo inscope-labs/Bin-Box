@@ -25,6 +25,9 @@ interface HostDao {
     @Delete
     suspend fun deleteHost(host: HostEntity)
 
+    @Query("DELETE FROM hosts WHERE id = :id")
+    suspend fun deleteHostById(id: Long): Int
+
     @Query("UPDATE hosts SET lastLatencyMs = :latencyMs WHERE id = :id")
     suspend fun updateLatency(id: Long, latencyMs: Long?)
 
