@@ -1,0 +1,42 @@
+{
+  "tier": "extended",
+  "version": "1.0.0",
+  "description": "Extended developer toolchain with version control, runtimes, and multiplexers",
+  "binaries": [
+    {
+      "name": "git",
+      "description": "Distributed version control system",
+      "category": "dev",
+      "nativeLibName": "libgit.so",
+      "required": false
+    },
+    {
+      "name": "ssh",
+      "description": "OpenSSH SSH client",
+      "category": "network",
+      "nativeLibName": "libssh.so",
+      "required": false
+    },
+    {
+      "name": "python3",
+      "description": "Python 3 interpreter runtime",
+      "category": "runtime",
+      "nativeLibName": "libpython.so",
+      "required": false
+    },
+    {
+      "name": "rsync",
+      "description": "Fast incremental file transfer tool",
+      "category": "network",
+      "nativeLibName": "librsync.so",
+      "required": false
+    },
+    {
+      "name": "tmux",
+      "description": "Terminal multiplexer",
+      "category": "terminal",
+      "nativeLibName": "libtmux.so",
+      "required": false
+    }
+  ]
+}

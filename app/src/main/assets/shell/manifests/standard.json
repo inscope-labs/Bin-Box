@@ -1,0 +1,56 @@
+{
+  "tier": "standard",
+  "version": "1.0.0",
+  "description": "Standard productivity shell tools including networking, archives, and editors",
+  "binaries": [
+    {
+      "name": "curl",
+      "description": "Command line tool for transferring data with URLs",
+      "category": "network",
+      "nativeLibName": "libcurl.so",
+      "required": false
+    },
+    {
+      "name": "tar",
+      "description": "Tar archiving utility",
+      "category": "archive",
+      "fallbackSystemPath": "/system/bin/tar",
+      "required": false
+    },
+    {
+      "name": "gzip",
+      "description": "File compression and decompression tool",
+      "category": "archive",
+      "fallbackSystemPath": "/system/bin/gzip",
+      "required": false
+    },
+    {
+      "name": "grep",
+      "description": "Pattern search tool",
+      "category": "text",
+      "fallbackSystemPath": "/system/bin/grep",
+      "required": false
+    },
+    {
+      "name": "sed",
+      "description": "Stream editor for filtering and transforming text",
+      "category": "text",
+      "fallbackSystemPath": "/system/bin/sed",
+      "required": false
+    },
+    {
+      "name": "awk",
+      "description": "Pattern scanning and processing language",
+      "category": "text",
+      "fallbackSystemPath": "/system/bin/awk",
+      "required": false
+    },
+    {
+      "name": "nano",
+      "description": "Lightweight terminal text editor",
+      "category": "editor",
+      "nativeLibName": "libnano.so",
+      "required": false
+    }
+  ]
+}

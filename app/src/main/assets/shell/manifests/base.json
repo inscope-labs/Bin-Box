@@ -1,0 +1,49 @@
+{
+  "tier": "base",
+  "version": "1.0.0",
+  "description": "Base POSIX shell tools provided by Android system and core runtime",
+  "binaries": [
+    {
+      "name": "sh",
+      "description": "POSIX command interpreter",
+      "category": "core",
+      "fallbackSystemPath": "/system/bin/sh",
+      "required": true
+    },
+    {
+      "name": "toybox",
+      "description": "All-in-one Linux command line utilities",
+      "category": "core",
+      "fallbackSystemPath": "/system/bin/toybox",
+      "required": false
+    },
+    {
+      "name": "toolbox",
+      "description": "Android system utility multiplexer",
+      "category": "core",
+      "fallbackSystemPath": "/system/bin/toolbox",
+      "required": false
+    },
+    {
+      "name": "ls",
+      "description": "List directory contents",
+      "category": "core",
+      "fallbackSystemPath": "/system/bin/ls",
+      "required": false
+    },
+    {
+      "name": "cat",
+      "description": "Concatenate and print files",
+      "category": "core",
+      "fallbackSystemPath": "/system/bin/cat",
+      "required": false
+    },
+    {
+      "name": "echo",
+      "description": "Display a line of text",
+      "category": "core",
+      "fallbackSystemPath": "/system/bin/echo",
+      "required": false
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+┌────────────────────────────────────────────────────────┐
+│  BinBox Local POSIX Shell Engine v1.0                  │
+│  Type 'help' or explore installed tier applets.        │
+└────────────────────────────────────────────────────────┘
