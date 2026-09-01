@@ -44,7 +44,7 @@ open issues of different types, each its own issue file.
 
 **Issue file contents:**
 - Full file path (human-readable, not just encoded in the filename).
-- Issue type (e.g. `LOGGING-GAP`, `FILE-SIZE`, `COMPLIANCE-CHECK`).
+- Issue type (e.g. `LOGGING-GAP`, `FILE-SIZE`).
 - One-line reason.
 - Date flagged and source agent-report filename.
 
@@ -142,34 +142,37 @@ Every `.kt` file must fulfill exactly one of two roles:
 A file that both orchestrates AND implements substantial business logic
 inline is a violation regardless of size.
 
-## 4.1 Size-Triggered Compliance Tiers (applies on sight, not just on touch)
+## 4.1 Size-Triggered Compliance Threshold (applies on sight, not just on touch)
 
-These thresholds apply the moment a file crosses them, independent of
-whether the current task otherwise concerns that file — do not wait for
-an unrelated task to happen to land on it.
+One threshold, split by file role, since role determines how much length
+implies tangled responsibility versus how much is just intrinsic to the
+kind of code:
 
-- **Files > 180 lines:** before this task proceeds, run a mandatory
-  compliance check against Section 3 (Mandatory Logging Standard) and
-  Section 4 (Single-Responsibility) for that file. State the result in
-  the agent report under a "COMPLIANCE CHECK (>180L): <file> — <pass /
-  gaps found>" line. If gaps are found, create the corresponding issue
-  file(s) per Section 1.1 (`LOGGING-GAP` and/or `COMPLIANCE-CHECK` type
-  as applicable). Gaps found do not block the task itself.
+- **UI files** — files whose primary content is `@Composable` screen or
+  component functions (typically under `ui/components/`, `ui/screens/`,
+  or equivalent): threshold is **1000 lines**. Declarative UI code
+  (modifiers, nested layout scopes, padding, previews) is inherently
+  more verbose than logic code without that length implying the file is
+  doing too much.
+- **Logic files** — everything else: Orchestrators and Modules per
+  Section 4 (ViewModels, Activities, Fragments, Services, UseCases,
+  repositories, provisioners, managers, etc.): threshold is
+  **500 lines**. Length here usually does mean tangled responsibility.
 
-- **Files > 300 lines:** the file must NOT be included in any task's
-  scope — not read into, not edited, not extended — except a task
-  explicitly designated a **restructuring task**.
+**Files over their threshold** must NOT be included in any task's
+scope — not read into, not edited, not extended — except a task
+explicitly designated a **restructuring task**.
 
 If a non-restructuring task's scope requires touching a file already
-over 300 lines, the agent must stop, not proceed, and create an issue
-file of type `FILE-SIZE` per Section 1.1 if one doesn't already exist,
-stating this explicitly under a "BLOCKED — FILE OVER 300L: <file>" line
-in the report, rather than making the edit anyway.
+over its threshold, the agent must stop, not proceed, and create an
+issue file of type `FILE-SIZE` per Section 1.1 if one doesn't already
+exist, stating this explicitly under a "BLOCKED — FILE OVER THRESHOLD:
+<file> (<UI/logic>, <line count>/<threshold>)" line in the report,
+rather than making the edit anyway.
 
-Before starting any task, check `issues/pending/` for any `FILE-SIZE` or
-`COMPLIANCE-CHECK` issue naming a file in this task's touch-set. A match
-adds remediation to this task's scope automatically, per the same
-pattern as Section 3.1.
+Before starting any task, check `issues/pending/` for any `FILE-SIZE`
+issue naming a file in this task's touch-set. A match adds remediation
+to this task's scope automatically, per the same pattern as Section 3.1.
 
 ## 4.2 Restructuring Tasks Are Repository-Wide Compliance Audits
 
@@ -180,7 +183,10 @@ failing at. A restructuring task must therefore:
 
 - not add new features or change external behavior;
 - split the file along Orchestrator/Module role lines until all
-  resulting files are ≤ 180 lines where reasonably achievable;
+  resulting files are comfortably under the applicable Section 4.1
+  threshold for their role (500 lines for logic files, 1000 for UI
+  files) where reasonably achievable — the goal is genuine
+  single-responsibility separation, not landing just under the number;
 - check EVERY file touched by the split — source file, each new
   destination file, and any existing file that imports/calls the code
   being moved — against the full standing AGENTS.md rule set (logging,
