@@ -49,6 +49,8 @@ android {
     versionName = resolvedVersionName
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    buildConfigField("Boolean", "IS_BETA_BUILD", "false")
   }
 
   signingConfigs {
