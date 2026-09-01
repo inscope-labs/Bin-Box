@@ -223,6 +223,21 @@ class TerminalEngineTest {
         assertEquals(0, manager.activeSessionIndex.value)
         assertEquals("Host B", manager.activeSession?.title)
 
+        // Snapshot & Reconnect test
+        val snapshots = manager.getActiveSnapshots()
+        assertEquals(1, snapshots.size)
+        assertEquals("Host B", snapshots[0].first.label)
+
+        val reconnectResult = manager.reconnectActiveSession()
+        assertNotNull(reconnectResult)
+        assertTrue(reconnectResult is AppResult.Success)
+        assertEquals(1, manager.sessions.value.size)
+
+        // Restore test
+        val restoreResults = manager.restoreSavedSessions(snapshots)
+        assertEquals(1, restoreResults.size)
+        assertEquals(2, manager.sessions.value.size)
+
         // Close all
         manager.closeAllSessions()
         assertEquals(0, manager.sessions.value.size)

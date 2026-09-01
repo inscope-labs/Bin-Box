@@ -168,6 +168,39 @@ class TerminalSessionManager(
         return null
     }
 
+    suspend fun reconnectSession(index: Int): AppResult<ShellSession>? {
+        val currentList = _sessions.value
+        if (index in currentList.indices) {
+            val oldSession = currentList[index]
+            val meta = sessionMetadata[oldSession.id]
+            if (meta != null) {
+                BinBoxLogger.i("TerminalSessionManager", "Reconnecting session at index $index: ${oldSession.title}")
+                closeSession(index)
+                return launchSession(meta.first, meta.second)
+            }
+        }
+        return null
+    }
+
+    suspend fun reconnectActiveSession(): AppResult<ShellSession>? {
+        return reconnectSession(_activeSessionIndex.value)
+    }
+
+    fun getActiveSnapshots(): List<Pair<ConnectionProfile, ShellProfile>> {
+        return _sessions.value.mapNotNull { session ->
+            sessionMetadata[session.id]
+        }
+    }
+
+    suspend fun restoreSavedSessions(
+        savedList: List<Pair<ConnectionProfile, ShellProfile>>
+    ): List<AppResult<ShellSession>> {
+        BinBoxLogger.i("TerminalSessionManager", "Restoring ${savedList.size} saved sessions")
+        return savedList.map { (profile, shell) ->
+            launchSession(profile, shell)
+        }
+    }
+
     fun selectSession(index: Int) {
         if (index in _sessions.value.indices) {
             _activeSessionIndex.value = index
