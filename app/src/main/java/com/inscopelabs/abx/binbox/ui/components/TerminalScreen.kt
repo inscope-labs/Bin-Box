@@ -86,7 +86,12 @@ fun TerminalScreen(
     var isCaseSensitive by remember { mutableStateOf(false) }
     var isRegexMode by remember { mutableStateOf(false) }
     var showWorkspaceDropdown by remember { mutableStateOf(false) }
+    var showPackagesSheet by remember { mutableStateOf(false) }
     val ociLauncher = LocalOciWizardLauncher.current
+
+    if (showPackagesSheet) {
+        LocalShellModulesSheet(onDismiss = { showPackagesSheet = false })
+    }
 
     // Session lines observation
     val sessionLines by (activeSession?.lines?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(emptyList()) })
@@ -437,6 +442,14 @@ fun TerminalScreen(
                             onClick = {
                                 showAddMenu = false
                                 viewModel.openLocalSession()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Manage Local Packages", color = ImmersiveTextPrimary) },
+                            leadingIcon = { Icon(Icons.Default.Extension, null, tint = ImmersivePrimary) },
+                            onClick = {
+                                showAddMenu = false
+                                showPackagesSheet = true
                             }
                         )
                         HorizontalDivider(color = ImmersiveBorderVerySubtle)

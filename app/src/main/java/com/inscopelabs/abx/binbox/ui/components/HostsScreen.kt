@@ -56,6 +56,11 @@ fun HostsScreen(
     var hostToEdit by remember { mutableStateOf<HostEntity?>(null) }
     var hostToDelete by remember { mutableStateOf<HostEntity?>(null) }
     var showQuickConnect by remember { mutableStateOf(false) }
+    var showPackagesSheet by remember { mutableStateOf(false) }
+
+    if (showPackagesSheet) {
+        LocalShellModulesSheet(onDismiss = { showPackagesSheet = false })
+    }
 
     val groupTags = listOf("All", "Favorites", "Workspace (${activeWorkspace.name})", "Cloud", "HomeLab", "Production", "Local", "IoT")
 
@@ -128,6 +133,15 @@ fun HostsScreen(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    IconButton(
+                        onClick = { showPackagesSheet = true },
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Slate800)
+                    ) {
+                        Icon(Icons.Default.Extension, "Local Packages", tint = CyanGlow, modifier = Modifier.size(20.dp))
+                    }
+
                     IconButton(
                         onClick = { viewModel.pingAllHosts() },
                         modifier = Modifier

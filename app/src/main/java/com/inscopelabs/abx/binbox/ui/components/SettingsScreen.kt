@@ -60,6 +60,12 @@ fun SettingsScreen(
         TerminalThemes.GruvboxDark
     )
 
+    var showPackagesSheet by remember { mutableStateOf(false) }
+
+    if (showPackagesSheet) {
+        LocalShellModulesSheet(onDismiss = { showPackagesSheet = false })
+    }
+
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = Slate950
@@ -495,7 +501,60 @@ fun SettingsScreen(
             }
 
             // ----------------------------------------------------
-            // 7. Local System & Shell Engine Telemetry
+            // 7. Local Shell Engine & Packages
+            // ----------------------------------------------------
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = ImmersiveSurface),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, ImmersiveBorderVerySubtle)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(ImmersivePrimary.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Default.Terminal, null, tint = ImmersivePrimary, modifier = Modifier.size(18.dp))
+                                }
+                                Column {
+                                    Text("Local POSIX Packages", color = ImmersiveTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                                    Text("Modular applet packages for offline shell", color = ImmersiveTextSecondary, fontSize = 12.sp)
+                                }
+                            }
+
+                            FilledTonalButton(
+                                onClick = { showPackagesSheet = true },
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = ImmersiveComponent,
+                                    contentColor = ImmersivePrimary
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Icon(Icons.Default.Extension, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Manage", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ----------------------------------------------------
+            // 8. Local System & Shell Engine Telemetry
             // ----------------------------------------------------
             item {
                 Card(
