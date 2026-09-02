@@ -95,6 +95,12 @@ android {
     includeInApk = false
     includeInBundle = true
   }
+
+  // RTX-100 Phase 0.2 — Standard/Extended shell tiers deliver via Play
+  // Feature Delivery, not app-bundled or runtime-downloaded (see
+  // Hosted_Local_Shell.md v2 §Design Intent re: W^X + Device and Network
+  // Abuse policy). Base tier stays in :app and is always installed.
+  dynamicFeatures += setOf(":shell-standard", ":shell-extended")
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
