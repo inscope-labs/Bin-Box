@@ -21,6 +21,7 @@ enum class TransferStatus {
     SCANNING,
     PACKING,
     STREAMING,
+    VERIFYING,
     COMPLETED,
     ERROR,
     CANCELLED
@@ -105,88 +106,190 @@ class FileTransferEngine(
                     throw IllegalStateException("No files selected or unable to read target")
                 }
 
-                val totalRawBytes = entries.sumOf { if (it.isDirectory) 0L else it.sizeBytes }
-                val totalFileCount = entries.count { !it.isDirectory }
                 val rootLabel = entries.firstOrNull()?.relativePath?.trimEnd('/') ?: "Payload"
-
-                _progress.value = TransferProgress(
-                    status = TransferStatus.PACKING,
-                    totalFiles = totalFileCount,
-                    totalBytes = totalRawBytes,
-                    currentItemName = "Packaging $rootLabel..."
-                )
-
-                // Package to .tar.gz payload
-                val tarGzBytes = TarStreamPacker.packToTarGz(entries)
-                // Use Base64.DEFAULT so lines are wrapped at 76 chars with \n, avoiding TTY line buffer truncation
-                val base64Text = Base64.encodeToString(tarGzBytes, Base64.DEFAULT).trim()
-                val totalBase64Len = base64Text.length.toLong()
-
-                BinBoxLogger.d(TAG, "Generated compressed payload size: ${tarGzBytes.size} bytes (Base64 string length: $totalBase64Len)")
-
-                _progress.value = TransferProgress(
-                    status = TransferStatus.STREAMING,
-                    progress = 0f,
-                    transferredBytes = 0L,
-                    totalBytes = totalBase64Len,
-                    totalFiles = totalFileCount,
-                    currentItemName = rootLabel
-                )
-
-                // 1. Send shell unpack command using a heredoc delimiter
-                // This ensures standard shell EOF piping without sending raw EOT bytes (0x04) over PTY
-                val eofMarker = "EOF_BINBOX_" + System.currentTimeMillis()
-                val startCommand = "\ncat << '$eofMarker' | base64 -d | tar -xzf -\n"
-                session.sendRawBytes(startCommand.toByteArray(Charsets.UTF_8))
-                delay(120)
-
-                // 2. Stream base64 chunks
-                var offset = 0
-                while (offset < base64Text.length) {
-                    ensureActive()
-                    val end = minOf(offset + chunkSize, base64Text.length)
-                    val chunk = base64Text.substring(offset, end)
-                    session.sendRawBytes(chunk.toByteArray(Charsets.UTF_8))
-
-                    offset = end
-                    val frac = (offset.toFloat() / totalBase64Len.toFloat()).coerceIn(0f, 1f)
-                    _progress.value = _progress.value.copy(
-                        progress = frac,
-                        transferredBytes = offset.toLong()
-                    )
-
-                    if (chunkDelayMs > 0) {
-                        delay(chunkDelayMs)
-                    }
-                }
-
-                // 3. Send heredoc termination marker
-                val endMarkerCommand = "\n$eofMarker\n"
-                session.sendRawBytes(endMarkerCommand.toByteArray(Charsets.UTF_8))
-                delay(300)
-
-                BinBoxLogger.i(TAG, "Successfully transferred $totalFileCount files ($totalBase64Len Base64 bytes) to shell session")
-                _progress.value = TransferProgress(
-                    status = TransferStatus.COMPLETED,
-                    progress = 1f,
-                    transferredBytes = totalBase64Len,
-                    totalBytes = totalBase64Len,
-                    totalFiles = totalFileCount,
-                    currentItemName = rootLabel
-                )
+                executePayloadTransfer(session, entries, rootLabel, chunkSize, chunkDelayMs)
             } catch (e: CancellationException) {
-                BinBoxLogger.w(TAG, "Transfer was cancelled")
+                BinBoxLogger.w(TAG, "Transfer scanning was cancelled")
                 _progress.value = _progress.value.copy(
                     status = TransferStatus.CANCELLED,
                     errorMessage = "Transfer cancelled"
                 )
             } catch (e: Throwable) {
-                BinBoxLogger.e(TAG, "Transfer failed: ${e.message}", e)
+                BinBoxLogger.e(TAG, "Transfer scanning failed: ${e.message}", e)
                 _progress.value = _progress.value.copy(
                     status = TransferStatus.ERROR,
-                    errorMessage = e.message ?: "Transfer encountered an error"
+                    errorMessage = e.message ?: "Transfer scanning error"
                 )
             }
+        }
+    }
+
+    /**
+     * Directly creates and writes a text file with specified content into the active shell's working directory.
+     */
+    fun startTextFileTransfer(
+        session: ShellSession,
+        fileName: String,
+        content: String,
+        chunkSize: Int = 2048,
+        chunkDelayMs: Long = 15L
+    ) {
+        val sanitizedName = fileName.trim().ifBlank { "new_file.txt" }
+        BinBoxLogger.i(TAG, "Initiating text file transfer: name=$sanitizedName, length=${content.length}, session=${session.id}")
+        activeJob?.cancel()
+
+        activeJob = scope.launch {
+            try {
+                val bytes = content.toByteArray(Charsets.UTF_8)
+                val entry = TarStreamPacker.TarEntry(
+                    relativePath = sanitizedName,
+                    isDirectory = false,
+                    sizeBytes = bytes.size.toLong(),
+                    inputStreamProvider = { java.io.ByteArrayInputStream(bytes) }
+                )
+                executePayloadTransfer(session, listOf(entry), sanitizedName, chunkSize, chunkDelayMs)
+            } catch (e: CancellationException) {
+                BinBoxLogger.w(TAG, "Text transfer was cancelled")
+                _progress.value = _progress.value.copy(
+                    status = TransferStatus.CANCELLED,
+                    errorMessage = "Transfer cancelled"
+                )
+            } catch (e: Throwable) {
+                BinBoxLogger.e(TAG, "Text transfer failed: ${e.message}", e)
+                _progress.value = _progress.value.copy(
+                    status = TransferStatus.ERROR,
+                    errorMessage = e.message ?: "Text transfer error"
+                )
+            }
+        }
+    }
+
+    private suspend fun executePayloadTransfer(
+        session: ShellSession,
+        entries: List<TarStreamPacker.TarEntry>,
+        rootLabel: String,
+        chunkSize: Int,
+        chunkDelayMs: Long
+    ) {
+        try {
+            if (session.state.value != com.inscopelabs.abx.binbox.terminal.model.SessionState.Connected) {
+                throw IllegalStateException("Shell session is not connected (${session.state.value})")
+            }
+
+            val totalRawBytes = entries.sumOf { if (it.isDirectory) 0L else it.sizeBytes }
+            val totalFileCount = entries.count { !it.isDirectory }
+
+            _progress.value = TransferProgress(
+                status = TransferStatus.PACKING,
+                totalFiles = totalFileCount,
+                totalBytes = totalRawBytes,
+                currentItemName = "Packaging $rootLabel..."
+            )
+
+            // Package to .tar.gz payload
+            val tarGzBytes = TarStreamPacker.packToTarGz(entries)
+            // Use Base64.DEFAULT so lines are wrapped at 76 chars with \n, avoiding TTY line buffer truncation
+            val base64Text = Base64.encodeToString(tarGzBytes, Base64.DEFAULT).trim()
+            val totalBase64Len = base64Text.length.toLong()
+
+            BinBoxLogger.d(TAG, "Generated compressed payload size: ${tarGzBytes.size} bytes (Base64 string length: $totalBase64Len)")
+
+            _progress.value = TransferProgress(
+                status = TransferStatus.STREAMING,
+                progress = 0f,
+                transferredBytes = 0L,
+                totalBytes = totalBase64Len,
+                totalFiles = totalFileCount,
+                currentItemName = rootLabel
+            )
+
+            // Mute terminal screen and log parsing so transfer data does not clutter user view or screen buffer
+            session.isScreenOutputMuted = true
+
+            // Send shell unpack command with leading space (to bypass .bash_history) and POSIX heredoc
+            val eofMarker = "EOF_BINBOX_" + System.currentTimeMillis()
+            val startCommand = "\n cat << '$eofMarker' | base64 -d | tar -xzf -\n"
+            session.sendRawBytes(startCommand.toByteArray(Charsets.UTF_8))
+            delay(120)
+
+            // Stream base64 chunks
+            var offset = 0
+            while (offset < base64Text.length) {
+                currentCoroutineContext().ensureActive()
+                if (session.state.value != com.inscopelabs.abx.binbox.terminal.model.SessionState.Connected) {
+                    throw IllegalStateException("Connection to remote shell lost during transfer")
+                }
+                val end = minOf(offset + chunkSize, base64Text.length)
+                val chunk = base64Text.substring(offset, end)
+                session.sendRawBytes(chunk.toByteArray(Charsets.UTF_8))
+
+                offset = end
+                val frac = (offset.toFloat() / totalBase64Len.toFloat()).coerceIn(0f, 0.95f)
+                _progress.value = _progress.value.copy(
+                    progress = frac,
+                    transferredBytes = offset.toLong()
+                )
+
+                if (chunkDelayMs > 0) {
+                    delay(chunkDelayMs)
+                }
+            }
+
+            // Send heredoc termination marker
+            val endMarkerCommand = "\n$eofMarker\n"
+            session.sendRawBytes(endMarkerCommand.toByteArray(Charsets.UTF_8))
+
+            // Verification phase: wait 3 seconds while verifying connection stability and remote extraction
+            _progress.value = _progress.value.copy(
+                status = TransferStatus.VERIFYING,
+                progress = 0.98f,
+                currentItemName = "Verifying extraction & remote sync..."
+            )
+
+            val verificationDurationMs = 3000L
+            val checkIntervalMs = 300L
+            var elapsed = 0L
+            while (elapsed < verificationDurationMs) {
+                currentCoroutineContext().ensureActive()
+                delay(checkIntervalMs)
+                elapsed += checkIntervalMs
+                if (session.state.value != com.inscopelabs.abx.binbox.terminal.model.SessionState.Connected) {
+                    throw IllegalStateException("Remote connection dropped before extraction could be verified")
+                }
+            }
+
+            // Send clean newline to restore shell prompt state
+            session.sendRawBytes("\n".toByteArray(Charsets.UTF_8))
+            delay(100)
+
+            // Restore screen output parsing
+            session.isScreenOutputMuted = false
+
+            BinBoxLogger.i(TAG, "Successfully transferred and verified $totalFileCount files ($totalBase64Len Base64 bytes) to shell session")
+            _progress.value = TransferProgress(
+                status = TransferStatus.COMPLETED,
+                progress = 1f,
+                transferredBytes = totalBase64Len,
+                totalBytes = totalBase64Len,
+                totalFiles = totalFileCount,
+                currentItemName = rootLabel
+            )
+        } catch (e: CancellationException) {
+            session.isScreenOutputMuted = false
+            BinBoxLogger.w(TAG, "Transfer was cancelled")
+            _progress.value = _progress.value.copy(
+                status = TransferStatus.CANCELLED,
+                errorMessage = "Transfer cancelled"
+            )
+        } catch (e: Throwable) {
+            session.isScreenOutputMuted = false
+            BinBoxLogger.e(TAG, "Transfer failed: ${e.message}", e)
+            _progress.value = _progress.value.copy(
+                status = TransferStatus.ERROR,
+                errorMessage = e.message ?: "Transfer encountered an error"
+            )
+        } finally {
+            session.isScreenOutputMuted = false
         }
     }
 

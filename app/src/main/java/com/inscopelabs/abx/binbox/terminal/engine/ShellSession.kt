@@ -49,6 +49,9 @@ interface ShellSession {
     val bytesReceived: StateFlow<Long> get() = kotlinx.coroutines.flow.MutableStateFlow(0L)
     val bytesSent: StateFlow<Long> get() = kotlinx.coroutines.flow.MutableStateFlow(0L)
     val isBracketedPasteMode: Boolean get() = false
+    var isScreenOutputMuted: Boolean
+        get() = false
+        set(_) {}
 
     fun start()
     fun sendInput(text: String)
@@ -93,6 +96,9 @@ open class TransportShellSession(
 
     override val isBracketedPasteMode: Boolean
         get() = ansiParser.isBracketedPasteMode
+
+    @Volatile
+    override var isScreenOutputMuted: Boolean = false
 
     init {
         transport.setListener(object : TransportListener {
@@ -160,6 +166,7 @@ open class TransportShellSession(
     }
 
     protected fun appendOutput(chunk: String) {
+        if (isScreenOutputMuted) return
         logBuffer.append(chunk)
         ansiParser.feed(chunk)
         _lines.value = ansiParser.getLines()

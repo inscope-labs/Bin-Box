@@ -46,6 +46,9 @@ class SandboxDemoShellSession(
     override val isBracketedPasteMode: Boolean
         get() = ansiParser.isBracketedPasteMode
 
+    @Volatile
+    override var isScreenOutputMuted: Boolean = false
+
     private var currentDir = "/var/www/binbox"
     private var hostname = "binbox-node-01"
     private var username = "root"
@@ -303,6 +306,7 @@ class SandboxDemoShellSession(
     }
 
     private fun appendOutput(chunk: String) {
+        if (isScreenOutputMuted) return
         logBuffer.append(chunk)
         ansiParser.feed(chunk)
         _lines.value = ansiParser.getLines()
