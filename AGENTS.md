@@ -201,3 +201,29 @@ failing at. A restructuring task must therefore:
   <file> — <compliant / gaps found + which rule + issue file created>"
   line, so the audit trail is per-file, not a single pass/fail for the
   whole task.
+
+## 5. Role Boundaries — AI Studio vs Claude/Tooling
+
+Full spec: `Hosted_Local_Shell-Addendum-Roles.md` (repo root).
+
+AI Studio's scope is Gradle/Kotlin/NDK-via-Gradle app code only — Compose
+UI, ViewModels, module logic, tests, resources. Anything requiring external
+fetch, verification, or CI orchestration, or an edit to a Protected Path
+below, is out of scope: defer it (flag per §1.1), do not attempt it.
+
+**Protected Paths** (never edit, even incidentally as part of a larger
+task's scope):
+
+- `.github/workflows/*.yml`
+- `proguard-rules.pro`
+- `AndroidManifest.xml`
+- `app/build.gradle.kts`
+- `version.properties`
+- `build-logs/**`
+- `settings.gradle.kts`
+- `build.gradle.kts` (root)
+- `gradle/wrapper/**`
+
+If a task's scope appears to require touching one of these, stop and create
+a `FILE-SIZE`-style issue file flagging it as blocked, rather than
+proceeding.
