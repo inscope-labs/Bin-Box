@@ -25,5 +25,5 @@ dependencyResolutionManagement {
 rootProject.name = "BinBox"
 
 include(":app")
-include(":shell-standard")
-include(":shell-extended")
+include(":shell_standard")
+include(":shell_extended")

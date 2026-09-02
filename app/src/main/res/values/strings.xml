@@ -11,4 +11,6 @@
     <string name="error_share_subject">BinBox Diagnostic Report [%1$s]</string>
     <string name="error_share_chooser_title">Share Diagnostic Report</string>
     <string name="error_share_failed">Failed to share diagnostic report</string>
+    <string name="title_shell_standard">Standard Shell</string>
+    <string name="title_shell_extended">Extended Shell</string>
 </resources>
