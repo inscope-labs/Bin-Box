@@ -30,6 +30,7 @@ fun TerminalUtilityBar(
     sessionState: SessionState,
     isSearching: Boolean,
     onToggleSearching: (Boolean) -> Unit,
+    onOpenFileTransfer: () -> Unit,
     onProbeTelemetry: () -> Unit,
     onFontZoomIn: () -> Unit,
     onFontZoomOut: () -> Unit,
@@ -102,6 +103,18 @@ fun TerminalUtilityBar(
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 activeSession?.let {
+                    IconButton(
+                        onClick = onOpenFileTransfer,
+                        modifier = Modifier.size(28.dp).testTag("upload_file_button")
+                    ) {
+                        Icon(
+                            Icons.Default.DriveFolderUpload,
+                            contentDescription = "Upload file or folder",
+                            tint = ImmersivePrimary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
                     IconButton(
                         onClick = onProbeTelemetry,
                         modifier = Modifier.size(28.dp).testTag("probe_telemetry_button")

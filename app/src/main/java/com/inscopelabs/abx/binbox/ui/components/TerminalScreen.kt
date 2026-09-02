@@ -52,6 +52,7 @@ fun TerminalScreen(
     var inputText by remember { mutableStateOf("") }
     val inputFocusRequester = remember { FocusRequester() }
     var showPackagesSheet by remember { mutableStateOf(false) }
+    var isFileTransferOpen by remember { mutableStateOf(false) }
     val ociLauncher = LocalOciWizardLauncher.current
 
     if (showPackagesSheet) {
@@ -106,12 +107,13 @@ fun TerminalScreen(
             onNavigateToHosts = { viewModel.setAppTab(AppTab.HOSTS) }
         )
 
-        // 2. Terminal Utility Action Bar (Search, Font, Clear, Telemetry)
+        // 2. Terminal Utility Action Bar (Search, Font, Clear, Telemetry, Transfer)
         TerminalUtilityBar(
             activeSession = activeSession,
             sessionState = sessionState,
             isSearching = isSearching,
             onToggleSearching = { viewModel.toggleSearching(it) },
+            onOpenFileTransfer = { isFileTransferOpen = true },
             onProbeTelemetry = {
                 activeSession?.let { viewModel.probeHostTelemetry(it.hostLabel) }
             },
@@ -223,6 +225,14 @@ fun TerminalScreen(
                     viewModel.createWorkspace(name, desc, icon, color, hostIds)
                     viewModel.closeWorkspaceDialog()
                 }
+            )
+        }
+
+        // File & Directory Transfer Bottom Sheet
+        if (isFileTransferOpen) {
+            FileTransferBottomSheet(
+                activeSession = activeSession,
+                onDismiss = { isFileTransferOpen = false }
             )
         }
     }
