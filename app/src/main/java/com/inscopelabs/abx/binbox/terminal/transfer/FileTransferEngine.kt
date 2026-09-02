@@ -118,7 +118,8 @@ class FileTransferEngine(
 
                 // Package to .tar.gz payload
                 val tarGzBytes = TarStreamPacker.packToTarGz(entries)
-                val base64Text = Base64.encodeToString(tarGzBytes, Base64.NO_WRAP)
+                // Use Base64.DEFAULT so lines are wrapped at 76 chars with \n, avoiding TTY line buffer truncation
+                val base64Text = Base64.encodeToString(tarGzBytes, Base64.DEFAULT).trim()
                 val totalBase64Len = base64Text.length.toLong()
 
                 BinBoxLogger.d(TAG, "Generated compressed payload size: ${tarGzBytes.size} bytes (Base64 string length: $totalBase64Len)")
@@ -132,11 +133,12 @@ class FileTransferEngine(
                     currentItemName = rootLabel
                 )
 
-                // 1. Send shell unpack command to active session
-                // We execute base64 decoding piped directly into tar extraction
-                val unpackCommand = "base64 -d | tar -xzf -\n"
-                session.sendRawBytes(unpackCommand.toByteArray(Charsets.UTF_8))
-                delay(100)
+                // 1. Send shell unpack command using a heredoc delimiter
+                // This ensures standard shell EOF piping without sending raw EOT bytes (0x04) over PTY
+                val eofMarker = "EOF_BINBOX_" + System.currentTimeMillis()
+                val startCommand = "\ncat << '$eofMarker' | base64 -d | tar -xzf -\n"
+                session.sendRawBytes(startCommand.toByteArray(Charsets.UTF_8))
+                delay(120)
 
                 // 2. Stream base64 chunks
                 var offset = 0
@@ -158,11 +160,10 @@ class FileTransferEngine(
                     }
                 }
 
-                // 3. Send newline and EOF (ASCII EOT = 0x04) to complete remote stream
-                session.sendRawBytes("\n".toByteArray(Charsets.UTF_8))
-                delay(50)
-                session.sendRawBytes(byteArrayOf(4)) // Ctrl+D / EOF
-                delay(200)
+                // 3. Send heredoc termination marker
+                val endMarkerCommand = "\n$eofMarker\n"
+                session.sendRawBytes(endMarkerCommand.toByteArray(Charsets.UTF_8))
+                delay(300)
 
                 BinBoxLogger.i(TAG, "Successfully transferred $totalFileCount files ($totalBase64Len Base64 bytes) to shell session")
                 _progress.value = TransferProgress(

@@ -1,6 +1,8 @@
 package com.inscopelabs.abx.binbox.ui.components.terminal
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -100,7 +102,8 @@ fun TerminalUtilityBar(
             // Quick Toolbar Actions (Telemetry, Search, Zoom, Copy, Share, Clear)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState())
             ) {
                 activeSession?.let {
                     IconButton(

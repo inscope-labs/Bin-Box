@@ -44,6 +44,8 @@ interface ShellSession {
     val state: StateFlow<SessionState>
     val lines: StateFlow<List<TerminalLine>>
     val rawLogText: String
+    val cleanPlainText: String
+        get() = lines.value.joinToString("\n") { it.rawText }
     val bytesReceived: StateFlow<Long> get() = kotlinx.coroutines.flow.MutableStateFlow(0L)
     val bytesSent: StateFlow<Long> get() = kotlinx.coroutines.flow.MutableStateFlow(0L)
     val isBracketedPasteMode: Boolean get() = false

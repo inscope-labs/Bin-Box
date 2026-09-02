@@ -120,13 +120,13 @@ fun TerminalScreen(
             onFontZoomIn = { viewModel.setFontSize(fontSizeSp + 1) },
             onFontZoomOut = { viewModel.setFontSize(fontSizeSp - 1) },
             onCopyLog = {
-                val log = activeSession?.rawLogText ?: ""
+                val log = activeSession?.cleanPlainText ?: ""
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("Terminal Log", log))
                 viewModel.showSnackbar("Copied terminal output to clipboard")
             },
             onShareLog = {
-                val log = activeSession?.rawLogText ?: ""
+                val log = activeSession?.cleanPlainText ?: ""
                 val sendIntent = Intent().apply {
                     action = Intent.ACTION_SEND
                     putExtra(Intent.EXTRA_TEXT, log)
