@@ -24,7 +24,7 @@ class GreetingScreenshotTest {
     fun greeting_screenshot() {
         composeTestRule.setContent {
             BinBoxTheme {
-                Text("Bin Box Terminal")
+                Text("BinBox Terminal")
             }
         }
 

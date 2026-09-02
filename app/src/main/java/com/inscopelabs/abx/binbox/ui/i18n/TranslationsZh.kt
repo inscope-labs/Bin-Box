@@ -1,10 +1,10 @@
 package com.inscopelabs.abx.binbox.ui.i18n
 
 val ChineseTranslations = AppStrings(
-    appName = "Bin Box",
+    appName = "BinBox",
     appTagline = "沉浸式 Android SSH 与终端执行平台",
     statusConnected = "已连接",
-    statusStandby = "待命: BIN BOX SHELL",
+    statusStandby = "待命: BINBOX SHELL",
     statusConnecting = "正在连接...",
     statusDisconnected = "已断开",
 
@@ -81,7 +81,7 @@ val ChineseTranslations = AppStrings(
     settingsTitle = "终端偏好设置",
     settingsSubtitle = "自定义渲染引擎、语言、配色主题与 Shell 行为",
     languageSectionTitle = "语言与本地化",
-    languageSectionSubtitle = "选择 Bin Box 界面的显示语言",
+    languageSectionSubtitle = "选择 BinBox 界面的显示语言",
     themeSectionTitle = "配色方案与主题",
     themeSectionSubtitle = "为所有终端会话选择 ANSI 色彩预设",
     fontSizeTitle = "字体大小",

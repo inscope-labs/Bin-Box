@@ -4,7 +4,7 @@ import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
 /**
- * Discovery metadata returned by the Bin Box / ABX Backend Gateway.
+ * Discovery metadata returned by the BinBox / ABX Backend Gateway.
  */
 @JsonClass(generateAdapter = true)
 data class BackendDiscoveryResponse(

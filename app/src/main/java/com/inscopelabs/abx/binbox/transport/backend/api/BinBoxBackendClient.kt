@@ -19,7 +19,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 /**
- * High-level client for the Bin Box Backend & Gateway APIs.
+ * High-level client for the BinBox Backend & Gateway APIs.
  * Supports live Retrofit communication and offline sandbox mock fallbacks.
  */
 class BinBoxBackendClient(

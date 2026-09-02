@@ -1,10 +1,10 @@
 package com.inscopelabs.abx.binbox.ui.i18n
 
 val GermanTranslations = AppStrings(
-    appName = "Bin Box",
+    appName = "BinBox",
     appTagline = "Immersive SSH- und Android-Terminal-Plattform",
     statusConnected = "VERBUNDEN",
-    statusStandby = "BEREIT: BIN BOX SHELL",
+    statusStandby = "BEREIT: BINBOX SHELL",
     statusConnecting = "VERBINDE...",
     statusDisconnected = "GETRENNT",
 
@@ -81,7 +81,7 @@ val GermanTranslations = AppStrings(
     settingsTitle = "Terminal-Einstellungen",
     settingsSubtitle = "Rendering-Engine, Sprache, Farbschemata und Shell-Verhalten anpassen",
     languageSectionTitle = "Sprache & Lokalisierung",
-    languageSectionSubtitle = "Wählen Sie die Anzeigesprache für Bin Box",
+    languageSectionSubtitle = "Wählen Sie die Anzeigesprache für BinBox",
     themeSectionTitle = "Farbschema & Design",
     themeSectionSubtitle = "ANSI-Farbpalette für Terminal-Sitzungen wählen",
     fontSizeTitle = "Schriftgröße",

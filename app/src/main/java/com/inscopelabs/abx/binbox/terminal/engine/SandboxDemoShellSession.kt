@@ -90,7 +90,7 @@ class SandboxDemoShellSession(
             }
             "help" -> {
                 appendOutput(
-                    "\u001B[1;36m=== Bin Box Sandbox Shell Commands ===\u001B[0m\r\n" +
+                    "\u001B[1;36m=== BinBox Sandbox Shell Commands ===\u001B[0m\r\n" +
                     " • \u001B[33mfastfetch\u001B[0m / \u001B[33mneofetch\u001B[0m : Display rich system telemetry art\r\n" +
                     " • \u001B[33mbtop\u001B[0m / \u001B[33mhtop\u001B[0m / \u001B[33mtop\u001B[0m : Interactive process monitor\r\n" +
                     " • \u001B[33mdocker ps\u001B[0m / \u001B[33mdocker stats\u001B[0m : Container cluster status\r\n" +
@@ -165,7 +165,7 @@ class SandboxDemoShellSession(
                         appendOutput(
                             "\u001B[32m#!/bin/bash\r\n" +
                             "set -e\r\n" +
-                            "echo '==> Deploying Bin Box Node v2.4...'\r\n" +
+                            "echo '==> Deploying BinBox Node v2.4...'\r\n" +
                             "git pull origin main\r\n" +
                             "docker-compose pull && docker-compose up -d --remove-orphans\r\n" +
                             "echo '==> Deployment complete!'\u001B[0m\r\n\r\n"
@@ -173,7 +173,7 @@ class SandboxDemoShellSession(
                     }
                     target.contains("README") -> {
                         appendOutput(
-                            "# Bin Box Remote Host Instance\r\n" +
+                            "# BinBox Remote Host Instance\r\n" +
                             "High performance Linux server console with SSH2, Docker, and terminal emulator.\r\n\r\n"
                         )
                     }
@@ -251,7 +251,7 @@ class SandboxDemoShellSession(
                "\u001B[1;36m`d\$\$'     ,\$P\"'   .    \$\$\$k\u001B[0m  \u001B[1;33mUptime:\u001B[0m 48 days, 14 hours\r\n" +
                "\u001B[1;36m \$\$P      d\$\$'     ,    \$\$\$\u001B[0m   \u001B[1;33mPackages:\u001B[0m 1,482 (dpkg), 4 (docker)\r\n" +
                "\u001B[1;36m \$\$:      \$\$.   -    ,d\$\$' \u001B[0m  \u001B[1;33mShell:\u001B[0m bash 5.2.21\r\n" +
-               "\u001B[1;36m \$\$;      Y\$b._   _,d\$P'   \u001B[0m  \u001B[1;33mTerminal:\u001B[0m Bin Box VT100 / Xterm\r\n" +
+               "\u001B[1;36m \$\$;      Y\$b._   _,d\$P'   \u001B[0m  \u001B[1;33mTerminal:\u001B[0m BinBox VT100 / Xterm\r\n" +
                "\u001B[1;36m Y\$\$.    `.`\"Y\$\$\$\$P\"'      \u001B[0m  \u001B[1;33mCPU:\u001B[0m AMD EPYC 7763 (4) @ 3.24GHz\r\n" +
                "\u001B[1;36m  `\$\$b      \"-.__          \u001B[0m  \u001B[1;33mMemory:\u001B[0m 4,210MiB / 16,384MiB (25%)\r\n" +
                "\u001B[1;36m   `Y\$\$.                   \u001B[0m  \u001B[1;33mDisk (/):\u001B[0m 42GiB / 120GiB (37%)\r\n" +

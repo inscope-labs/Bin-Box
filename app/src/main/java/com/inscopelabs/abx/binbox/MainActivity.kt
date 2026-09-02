@@ -1,10 +1,16 @@
 package com.inscopelabs.abx.binbox
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
@@ -27,6 +33,21 @@ class MainActivity : ComponentActivity() {
             var showOciWizard by remember { mutableStateOf(false) }
             var showOciManagement by remember { mutableStateOf(false) }
             val hasCompletedOciProvisioning = OciProvisioningStatus.hasCompletedProvisioning(hosts)
+
+            val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestPermission()
+            ) { isGranted ->
+                BinBoxLogger.i("MainActivity", "POST_NOTIFICATIONS granted: $isGranted")
+            }
+
+            LaunchedEffect(Unit) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        BinBoxLogger.d("MainActivity", "Requesting POST_NOTIFICATIONS permission")
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+            }
 
             CompositionLocalProvider(
                 LocalAppStrings provides strings,

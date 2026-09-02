@@ -1,10 +1,10 @@
 package com.inscopelabs.abx.binbox.ui.i18n
 
 val RussianTranslations = AppStrings(
-    appName = "Bin Box",
+    appName = "BinBox",
     appTagline = "Терминал SSH и платформа исполнения Android",
     statusConnected = "ПОДКЛЮЧЕНО",
-    statusStandby = "ОЖИДАНИЕ: ОБОЛОЧКА BIN BOX",
+    statusStandby = "ОЖИДАНИЕ: ОБОЛОЧКА BINBOX",
     statusConnecting = "ПОДКЛЮЧЕНИЕ...",
     statusDisconnected = "ОТКЛЮЧЕНО",
 
@@ -81,7 +81,7 @@ val RussianTranslations = AppStrings(
     settingsTitle = "Настройки терминала",
     settingsSubtitle = "Настройка рендеринга, языка интерфейса, цветовой схемы и оболочки",
     languageSectionTitle = "Язык и локализация",
-    languageSectionSubtitle = "Выберите язык интерфейса Bin Box",
+    languageSectionSubtitle = "Выберите язык интерфейса BinBox",
     themeSectionTitle = "Цветовая схема и тема",
     themeSectionSubtitle = "Выбор палитры ANSI для всех сессий",
     fontSizeTitle = "Размер шрифта",

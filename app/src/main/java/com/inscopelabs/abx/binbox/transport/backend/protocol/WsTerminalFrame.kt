@@ -4,7 +4,7 @@ import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
 /**
- * Standard frame types supported by the Bin Box WebSocket Terminal Protocol.
+ * Standard frame types supported by the BinBox WebSocket Terminal Protocol.
  */
 enum class WsFrameType {
     AUTH,

@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Bin Box"
+rootProject.name = "BinBox"
 
 include(":app")

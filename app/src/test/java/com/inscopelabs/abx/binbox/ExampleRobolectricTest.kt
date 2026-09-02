@@ -19,7 +19,7 @@ class ExampleRobolectricTest {
     fun `read string from context verifies app name`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val appName = context.getString(R.string.app_name)
-        assertEquals("Bin Box", appName)
+        assertEquals("BinBox", appName)
     }
 
     @Test
@@ -30,10 +30,10 @@ class ExampleRobolectricTest {
             onBell = { bellTriggered = true }
         )
 
-        parser.feed("Hello Bin Box Terminal\n")
+        parser.feed("Hello BinBox Terminal\n")
         val lines = parser.getLines()
         assertEquals(1, lines.size)
-        assertEquals("Hello Bin Box Terminal", lines[0].rawText)
+        assertEquals("Hello BinBox Terminal", lines[0].rawText)
     }
 
     @Test

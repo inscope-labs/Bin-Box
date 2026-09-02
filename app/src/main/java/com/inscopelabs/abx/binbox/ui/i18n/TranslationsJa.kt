@@ -1,10 +1,10 @@
 package com.inscopelabs.abx.binbox.ui.i18n
 
 val JapaneseTranslations = AppStrings(
-    appName = "Bin Box",
+    appName = "BinBox",
     appTagline = "Android高機能SSH＆ターミナル環境",
     statusConnected = "接続中",
-    statusStandby = "スタンバイ: BIN BOX SHELL",
+    statusStandby = "スタンバイ: BINBOX SHELL",
     statusConnecting = "接続試行中...",
     statusDisconnected = "切断",
 
@@ -81,7 +81,7 @@ val JapaneseTranslations = AppStrings(
     settingsTitle = "ターミナル環境設定",
     settingsSubtitle = "レンダリング、言語、配色テーマ、シェルの動作設定",
     languageSectionTitle = "言語とローカライズ",
-    languageSectionSubtitle = "Bin Boxの表示言語を選択します",
+    languageSectionSubtitle = "BinBoxの表示言語を選択します",
     themeSectionTitle = "カラースキーム＆テーマ",
     themeSectionSubtitle = "ターミナルのANSIカラーパレットを選択",
     fontSizeTitle = "フォントサイズ",

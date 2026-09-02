@@ -193,7 +193,7 @@ private fun ProvisioningStepRow(label: String, done: Boolean, active: Boolean) {
 
 @Composable
 fun HostRegistrationStage(publicIp: String?, error: String?, onRetry: (() -> Unit)? = null) {
-    StageHeader("Registering the host", "Adding the new VM to Bin Box's host list so you can connect from the Terminal tab.")
+    StageHeader("Registering the host", "Adding the new VM to BinBox's host list so you can connect from the Terminal tab.")
 
     publicIp?.let {
         InfoCard(icon = Icons.Default.Dns, title = "Instance is up", body = "Public IP: $it")

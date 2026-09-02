@@ -86,7 +86,7 @@ fun TerminalBufferView(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "Bin Box Terminal",
+                    text = "BinBox Terminal",
                     color = ImmersiveTextPrimary,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,

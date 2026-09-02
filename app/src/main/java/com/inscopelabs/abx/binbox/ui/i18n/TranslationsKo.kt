@@ -1,10 +1,10 @@
 package com.inscopelabs.abx.binbox.ui.i18n
 
 val KoreanTranslations = AppStrings(
-    appName = "Bin Box",
+    appName = "BinBox",
     appTagline = "Android 고성능 SSH 및 터미널 플랫폼",
     statusConnected = "연결됨",
-    statusStandby = "대기 중: BIN BOX SHELL",
+    statusStandby = "대기 중: BINBOX SHELL",
     statusConnecting = "연결 중...",
     statusDisconnected = "연결 끊김",
 
@@ -81,7 +81,7 @@ val KoreanTranslations = AppStrings(
     settingsTitle = "터미널 환경설정",
     settingsSubtitle = "렌더링 엔진, 언어, 색상 테마 및 셸 동작 사용자 정의",
     languageSectionTitle = "언어 및 지역화",
-    languageSectionSubtitle = "Bin Box 인터페이스의 표시 언어를 선택하세요",
+    languageSectionSubtitle = "BinBox 인터페이스의 표시 언어를 선택하세요",
     themeSectionTitle = "색상 구성 및 테마",
     themeSectionSubtitle = "모든 터미널 세션에 적용할 ANSI 색상 팔레트 선택",
     fontSizeTitle = "글꼴 크기",

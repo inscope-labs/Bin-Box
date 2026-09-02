@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Bin Box</string>
+    <string name="app_name">BinBox</string>
     <string name="crash_unknown_type">Unknown Exception</string>
     <string name="crash_unknown_message">No exception message available</string>
     <string name="crash_copied">Crash report copied to clipboard</string>

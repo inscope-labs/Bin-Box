@@ -13,7 +13,7 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 
 /**
- * Retrofit REST API interface for Bin Box backend discovery, VM telemetry,
+ * Retrofit REST API interface for BinBox backend discovery, VM telemetry,
  * and remote session provisioning.
  */
 interface BinBoxBackendApi {

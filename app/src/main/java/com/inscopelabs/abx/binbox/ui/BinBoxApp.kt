@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -14,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -22,10 +24,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
 import com.inscopelabs.abx.binbox.data.entity.HostEntity
 import com.inscopelabs.abx.binbox.oci.management.OciManagementScreen
 import com.inscopelabs.abx.binbox.oci.management.OciProvisioningStatus
 import com.inscopelabs.abx.binbox.oci.wizard.OciOnboardingScreen
+import com.inscopelabs.abx.binbox.terminal.service.TerminalForegroundService
 import com.inscopelabs.abx.binbox.ui.components.*
 import com.inscopelabs.abx.binbox.ui.i18n.LocalAppStrings
 import com.inscopelabs.abx.binbox.ui.theme.*
@@ -43,6 +47,7 @@ fun BinBoxApp(
     onSetShowOciManagement: (Boolean) -> Unit = {}
 ) {
     val strings = LocalAppStrings.current
+    val context = LocalContext.current
     val currentTab by viewModel.currentAppTab.collectAsStateWithLifecycle()
     val sessions by viewModel.sessions.collectAsStateWithLifecycle()
     val activeIdx by viewModel.activeSessionIndex.collectAsStateWithLifecycle()
@@ -90,64 +95,84 @@ fun BinBoxApp(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    // Far Left: Rectangular Back Arrow Button (activates persistent notification and minimizes to background)
+                    IconButton(
+                        onClick = {
+                            BinBoxLogger.i("BinBoxApp", "Top Bar back button clicked: activating terminal persistent notification")
+                            TerminalForegroundService.startService(
+                                context = context,
+                                activeShellTitle = activeSession?.title,
+                                sessionCount = if (activeSession != null) 1 else 0
+                            )
+                            (context as? android.app.Activity)?.moveTaskToBack(true)
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color.White.copy(alpha = 0.05f))
                     ) {
-                        // Luminous Squircle Terminal Icon
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(ImmersivePrimary)
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = ImmersiveTextSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Center: App Name & Connection Pulse aligned horizontally and vertically in the center
+                    val isConnected = activeSession != null
+                    val rawShellName = activeSession?.title ?: "local-device"
+                    val shellName = rawShellName.uppercase()
+                    val statusText = if (isConnected) strings.statusConnected.uppercase() else strings.statusStandby.uppercase()
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "BinBox",
+                            color = ImmersiveTextPrimary,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.5).sp
+                        )
+
+                        // Status Indicator Row with Live Pulse:
+                        // Shell name on left of color indicator, status 'Connected' on right of color indicator
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(top = 2.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Terminal,
-                                contentDescription = "Bin Box",
-                                tint = ImmersiveOnPrimary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-
-                        Column {
                             Text(
-                                text = "Bin Box",
-                                color = ImmersiveTextPrimary,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = (-0.5).sp
+                                text = shellName,
+                                color = if (isConnected) ImmersiveTextSecondary else ImmersiveTextMuted,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                letterSpacing = 0.5.sp,
+                                maxLines = 1
                             )
 
-                            // Status Indicator Row with Live Pulse
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.padding(top = 2.dp)
-                            ) {
-                                val isConnected = activeSession != null
-                                val activeHostTitle = activeSession?.title ?: "local-device"
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isConnected) ImmersiveStatusGreen else ImmersiveTextMuted)
+                            )
 
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isConnected) ImmersiveStatusGreen else ImmersiveTextMuted)
-                                )
-
-                                Text(
-                                    text = if (isConnected) "${strings.statusConnected}: $activeHostTitle" else strings.statusStandby,
-                                    color = if (isConnected) ImmersiveTextSecondary else ImmersiveTextMuted,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    letterSpacing = 0.5.sp,
-                                    maxLines = 1
-                                )
-                            }
+                            Text(
+                                text = statusText,
+                                color = if (isConnected) ImmersiveTextSecondary else ImmersiveTextMuted,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                letterSpacing = 0.5.sp,
+                                maxLines = 1
+                            )
                         }
                     }
 
-                    // Header Quick Settings / Telemetry Trigger
+                    // Far Right: Header Quick Settings in a rectangular button (converted from round)
                     IconButton(
                         onClick = {
                             if (currentTab == AppTab.SETTINGS) {
@@ -158,7 +183,7 @@ fun BinBoxApp(
                         },
                         modifier = Modifier
                             .size(40.dp)
-                            .clip(CircleShape)
+                            .clip(RoundedCornerShape(6.dp))
                             .background(Color.White.copy(alpha = 0.05f))
                     ) {
                         Icon(

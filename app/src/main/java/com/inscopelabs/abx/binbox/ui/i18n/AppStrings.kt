@@ -4,10 +4,10 @@ import androidx.compose.runtime.compositionLocalOf
 
 data class AppStrings(
     // App & Header
-    val appName: String = "Bin Box",
+    val appName: String = "BinBox",
     val appTagline: String = "Immersive SSH & Android Terminal",
     val statusConnected: String = "CONNECTED",
-    val statusStandby: String = "STANDBY: BIN BOX SHELL",
+    val statusStandby: String = "STANDBY: BINBOX SHELL",
     val statusConnecting: String = "CONNECTING...",
     val statusDisconnected: String = "DISCONNECTED",
 
@@ -90,7 +90,7 @@ data class AppStrings(
     val settingsTitle: String = "Terminal Preferences",
     val settingsSubtitle: String = "Customize rendering engine, language, color schemes, and shell behavior",
     val languageSectionTitle: String = "Language & Localization",
-    val languageSectionSubtitle: String = "Choose the display language for Bin Box UI",
+    val languageSectionSubtitle: String = "Choose the display language for BinBox UI",
     val themeSectionTitle: String = "Color Scheme & Theme",
     val themeSectionSubtitle: String = "Select ANSI palette preset for all terminal sessions",
     val fontSizeTitle: String = "Font Size",

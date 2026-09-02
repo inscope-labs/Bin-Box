@@ -42,7 +42,7 @@ fun WelcomeStage(onGetStarted: () -> Unit) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "This walks through creating a VM on Oracle's Always Free tier and adding it straight to Bin Box as a host — no separate SSH setup needed.",
+            "This walks through creating a VM on Oracle's Always Free tier and adding it straight to BinBox as a host — no separate SSH setup needed.",
             color = ImmersiveTextSecondary,
             fontSize = 14.sp,
             lineHeight = 20.sp
