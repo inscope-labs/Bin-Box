@@ -31,6 +31,9 @@ import com.inscopelabs.abx.binbox.oci.management.OciProvisioningStatus
 import com.inscopelabs.abx.binbox.oci.wizard.OciOnboardingScreen
 import com.inscopelabs.abx.binbox.terminal.service.TerminalForegroundService
 import com.inscopelabs.abx.binbox.ui.components.*
+import com.inscopelabs.abx.binbox.ui.components.navigation.BinBoxBottomBar
+import com.inscopelabs.abx.binbox.ui.components.navigation.MoreNavigationBottomSheet
+import com.inscopelabs.abx.binbox.ui.components.terminal.FileTransferBottomSheet
 import com.inscopelabs.abx.binbox.ui.i18n.LocalAppStrings
 import com.inscopelabs.abx.binbox.ui.theme.*
 import com.inscopelabs.abx.binbox.ui.viewmodel.AppTab
@@ -57,6 +60,8 @@ fun BinBoxApp(
     val selectedSnippet by viewModel.selectedSnippetForRun.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
+    var isMoreMenuOpen by remember { mutableStateOf(false) }
+    var isFileTransferSheetOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(snackbarMsg) {
         snackbarMsg?.let { msg ->
@@ -197,128 +202,25 @@ fun BinBoxApp(
             }
         },
         bottomBar = {
-            Surface(
-                color = ImmersiveSurface,
-                border = androidx.compose.foundation.BorderStroke(1.dp, ImmersiveBorderVerySubtle)
-            ) {
-                NavigationBar(
-                    containerColor = ImmersiveSurface,
-                    contentColor = ImmersiveTextSecondary,
-                    tonalElevation = 0.dp,
-                    modifier = Modifier.testTag("bottom_nav_bar")
-                ) {
-                    // 1. Terminal Tab
-                    NavigationBarItem(
-                        selected = currentTab == AppTab.TERMINAL,
-                        onClick = { viewModel.setAppTab(AppTab.TERMINAL) },
-                        icon = {
-                            BadgedBox(badge = {
-                                if (sessions.isNotEmpty()) {
-                                    Badge(
-                                        containerColor = ImmersivePrimary,
-                                        contentColor = ImmersiveOnPrimary
-                                    ) {
-                                        Text("${sessions.size}", fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }) {
-                                Icon(
-                                    imageVector = if (currentTab == AppTab.TERMINAL) Icons.Default.Terminal else Icons.Outlined.Terminal,
-                                    contentDescription = strings.tabTerminal
-                                )
-                            }
-                        },
-                        label = { Text(strings.tabTerminal, fontSize = 11.sp, fontWeight = if (currentTab == AppTab.TERMINAL) FontWeight.Bold else FontWeight.Normal) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ImmersivePrimary,
-                            selectedTextColor = ImmersivePrimary,
-                            indicatorColor = ImmersiveComponent,
-                            unselectedIconColor = ImmersiveTextSecondary,
-                            unselectedTextColor = ImmersiveTextSecondary
-                        )
-                    )
-
-                    // 2. Hosts Tab
-                    NavigationBarItem(
-                        selected = currentTab == AppTab.HOSTS,
-                        onClick = { viewModel.setAppTab(AppTab.HOSTS) },
-                        icon = {
-                            Icon(
-                                imageVector = if (currentTab == AppTab.HOSTS) Icons.Default.Dns else Icons.Outlined.Dns,
-                                contentDescription = strings.tabHosts
-                            )
-                        },
-                        label = { Text(strings.tabHosts, fontSize = 11.sp, fontWeight = if (currentTab == AppTab.HOSTS) FontWeight.Bold else FontWeight.Normal) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ImmersivePrimary,
-                            selectedTextColor = ImmersivePrimary,
-                            indicatorColor = ImmersiveComponent,
-                            unselectedIconColor = ImmersiveTextSecondary,
-                            unselectedTextColor = ImmersiveTextSecondary
-                        )
-                    )
-
-                    // 3. Scripts / Snippets Tab
-                    NavigationBarItem(
-                        selected = currentTab == AppTab.SNIPPETS,
-                        onClick = { viewModel.setAppTab(AppTab.SNIPPETS) },
-                        icon = {
-                            Icon(
-                                imageVector = if (currentTab == AppTab.SNIPPETS) Icons.Default.Code else Icons.Outlined.Code,
-                                contentDescription = strings.tabScripts
-                            )
-                        },
-                        label = { Text(strings.tabScripts, fontSize = 11.sp, fontWeight = if (currentTab == AppTab.SNIPPETS) FontWeight.Bold else FontWeight.Normal) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ImmersivePrimary,
-                            selectedTextColor = ImmersivePrimary,
-                            indicatorColor = ImmersiveComponent,
-                            unselectedIconColor = ImmersiveTextSecondary,
-                            unselectedTextColor = ImmersiveTextSecondary
-                        )
-                    )
-
-                    // 4. Keys Tab
-                    NavigationBarItem(
-                        selected = currentTab == AppTab.KEYS,
-                        onClick = { viewModel.setAppTab(AppTab.KEYS) },
-                        icon = {
-                            Icon(
-                                imageVector = if (currentTab == AppTab.KEYS) Icons.Default.VpnKey else Icons.Outlined.VpnKey,
-                                contentDescription = strings.tabKeys
-                            )
-                        },
-                        label = { Text(strings.tabKeys, fontSize = 11.sp, fontWeight = if (currentTab == AppTab.KEYS) FontWeight.Bold else FontWeight.Normal) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ImmersivePrimary,
-                            selectedTextColor = ImmersivePrimary,
-                            indicatorColor = ImmersiveComponent,
-                            unselectedIconColor = ImmersiveTextSecondary,
-                            unselectedTextColor = ImmersiveTextSecondary
-                        )
-                    )
-
-                    // 5. Settings Tab
-                    NavigationBarItem(
-                        selected = currentTab == AppTab.SETTINGS,
-                        onClick = { viewModel.setAppTab(AppTab.SETTINGS) },
-                        icon = {
-                            Icon(
-                                imageVector = if (currentTab == AppTab.SETTINGS) Icons.Default.Settings else Icons.Outlined.Settings,
-                                contentDescription = strings.tabSettings
-                            )
-                        },
-                        label = { Text(strings.tabSettings, fontSize = 11.sp, fontWeight = if (currentTab == AppTab.SETTINGS) FontWeight.Bold else FontWeight.Normal) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ImmersivePrimary,
-                            selectedTextColor = ImmersivePrimary,
-                            indicatorColor = ImmersiveComponent,
-                            unselectedIconColor = ImmersiveTextSecondary,
-                            unselectedTextColor = ImmersiveTextSecondary
-                        )
-                    )
+            BinBoxBottomBar(
+                currentTab = currentTab,
+                terminalLabel = strings.tabTerminal,
+                hostsLabel = strings.tabHosts,
+                onToggleTerminalHosts = {
+                    if (currentTab == AppTab.HOSTS) {
+                        viewModel.setAppTab(AppTab.TERMINAL)
+                    } else {
+                        viewModel.setAppTab(AppTab.HOSTS)
+                    }
+                },
+                onContextMenuClick = {
+                    // Future context-specific menu
+                    viewModel.showSnackbar("Context menu: active for ${if (currentTab == AppTab.HOSTS) strings.tabHosts else strings.tabTerminal}")
+                },
+                onMoreMenuClick = {
+                    isMoreMenuOpen = true
                 }
-            }
+            )
         }
     ) { innerPadding ->
         Box(
@@ -402,5 +304,27 @@ fun BinBoxApp(
                 onDismiss = { onSetShowOciManagement(false) }
             )
         }
+    }
+
+    // More Navigation Bottom Sheet (Scripts, Keys, Files, Preferences)
+    if (isMoreMenuOpen) {
+        MoreNavigationBottomSheet(
+            onDismiss = { isMoreMenuOpen = false },
+            onNavigateToScripts = { viewModel.setAppTab(AppTab.SNIPPETS) },
+            onNavigateToKeys = { viewModel.setAppTab(AppTab.KEYS) },
+            onOpenFiles = { isFileTransferSheetOpen = true },
+            onOpenContextSettings = { viewModel.setAppTab(AppTab.SETTINGS) },
+            scriptsLabel = strings.tabScripts,
+            keysLabel = strings.tabKeys,
+            filesLabel = "Files"
+        )
+    }
+
+    // File & Directory Transfer Bottom Sheet (opened from More menu)
+    if (isFileTransferSheetOpen) {
+        FileTransferBottomSheet(
+            activeSession = activeSession,
+            onDismiss = { isFileTransferSheetOpen = false }
+        )
     }
 }
