@@ -48,12 +48,44 @@ fun TerminalScreen(
     val renameDialogSessionIndex by viewModel.renameDialogSessionIndex.collectAsStateWithLifecycle()
     val isSessionSwitcherOpen by viewModel.isSessionSwitcherOpen.collectAsStateWithLifecycle()
     val isWorkspaceDialogOpen by viewModel.isWorkspaceDialogOpen.collectAsStateWithLifecycle()
+    val history by viewModel.history.collectAsStateWithLifecycle()
 
     var inputText by remember { mutableStateOf("") }
+    var historyIndex by remember { mutableIntStateOf(-1) }
+    var uncommittedInput by remember { mutableStateOf("") }
     val inputFocusRequester = remember { FocusRequester() }
     var showPackagesSheet by remember { mutableStateOf(false) }
     var isFileTransferOpen by remember { mutableStateOf(false) }
     val ociLauncher = LocalOciWizardLauncher.current
+
+    val onHistoryUp: () -> Unit = {
+        if (history.isNotEmpty()) {
+            if (historyIndex == -1) {
+                uncommittedInput = inputText
+                historyIndex = 0
+                inputText = history[0].command
+            } else if (historyIndex < history.lastIndex) {
+                historyIndex++
+                inputText = history[historyIndex].command
+            }
+        } else {
+            viewModel.sendSpecialKey(TerminalKey.ARROW_UP)
+        }
+    }
+
+    val onHistoryDown: () -> Unit = {
+        if (history.isNotEmpty()) {
+            if (historyIndex > 0) {
+                historyIndex--
+                inputText = history[historyIndex].command
+            } else if (historyIndex == 0) {
+                historyIndex = -1
+                inputText = uncommittedInput
+            }
+        } else {
+            viewModel.sendSpecialKey(TerminalKey.ARROW_DOWN)
+        }
+    }
 
     if (showPackagesSheet) {
         LocalShellModulesSheet(onDismiss = { showPackagesSheet = false })
@@ -160,12 +192,23 @@ fun TerminalScreen(
             cursorVisible = cursorVisible,
             searchQuery = searchQuery,
             inputText = inputText,
-            onInputTextChange = { inputText = it },
-            onSendCommand = { viewModel.sendCommand(it) },
+            onInputTextChange = { newText ->
+                inputText = newText
+                if (historyIndex != -1 && (history.isEmpty() || newText != history.getOrNull(historyIndex)?.command)) {
+                    historyIndex = -1
+                }
+            },
+            onSendCommand = {
+                historyIndex = -1
+                uncommittedInput = ""
+                viewModel.sendCommand(it)
+            },
             inputFocusRequester = inputFocusRequester,
             onLaunchDemo = { viewModel.openDemoSession() },
             onLaunchLocal = { viewModel.openLocalSession() },
             onLaunchOci = { ociLauncher() },
+            onHistoryUp = onHistoryUp,
+            onHistoryDown = onHistoryDown,
             modifier = Modifier.weight(1f)
         )
 
@@ -182,21 +225,31 @@ fun TerminalScreen(
                 onSendSpecialKey = { specialKey ->
                     if (specialKey == TerminalKey.CTRL_C) {
                         inputText = ""
+                        historyIndex = -1
+                        uncommittedInput = ""
                     }
                     viewModel.sendSpecialKey(specialKey)
                 },
                 onSendRawInput = { rawText ->
                     inputText += rawText
                 },
-                onSendCommand = { viewModel.sendCommand(it) },
+                onSendCommand = {
+                    historyIndex = -1
+                    uncommittedInput = ""
+                    viewModel.sendCommand(it)
+                },
                 onSendEnter = {
+                    historyIndex = -1
+                    uncommittedInput = ""
                     if (inputText.isNotBlank()) {
                         viewModel.sendCommand(inputText)
                         inputText = ""
                     } else {
                         viewModel.sendRawInput("\n")
                     }
-                }
+                },
+                onHistoryUp = onHistoryUp,
+                onHistoryDown = onHistoryDown
             )
         }
 

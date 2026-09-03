@@ -23,7 +23,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +34,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -49,6 +53,26 @@ import com.inscopelabs.abx.binbox.terminal.model.TerminalLine
 import com.inscopelabs.abx.binbox.terminal.model.TerminalThemePreset
 import com.inscopelabs.abx.binbox.ui.theme.*
 
+fun normalizePrompt(annotated: AnnotatedString): AnnotatedString {
+    val text = annotated.text
+    val trimmed = text.trimEnd()
+    if (trimmed.isEmpty()) return annotated
+    val targetText = "$trimmed "
+    if (text == targetText) return annotated
+
+    val builder = AnnotatedString.Builder()
+    builder.append(trimmed)
+    builder.append(" ")
+    for (span in annotated.spanStyles) {
+        val start = span.start.coerceAtMost(trimmed.length)
+        val end = span.end.coerceAtMost(trimmed.length)
+        if (start < end) {
+            builder.addStyle(span.item, start, end)
+        }
+    }
+    return builder.toAnnotatedString()
+}
+
 @Composable
 fun TerminalBufferView(
     activeSession: ShellSession?,
@@ -66,8 +90,14 @@ fun TerminalBufferView(
     onLaunchDemo: () -> Unit,
     onLaunchLocal: () -> Unit,
     onLaunchOci: () -> Unit,
+    onHistoryUp: (() -> Unit)? = null,
+    onHistoryDown: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    var lastKnownPrompt by remember(activeSession?.id) {
+        mutableStateOf<AnnotatedString?>(null)
+    }
+
     // Square-cornered terminal background container per industry terminal specifications
     Box(
         modifier = modifier
@@ -156,12 +186,18 @@ fun TerminalBufferView(
             }
         } else {
             // Check whether the terminal session has an active pending prompt line
-            val hasPromptLine = activeSession.hasPendingLine || (
-                sessionLines.isNotEmpty() && sessionLines.last().rawText.let { text ->
-                    text.endsWith("$ ") || text.endsWith("# ") || text.endsWith("> ") ||
-                    text.endsWith("% ") || text.endsWith("$") || text.endsWith("#")
-                }
-            )
+            val hasPending = activeSession.hasPendingLine
+            val lastLineIsPrompt = sessionLines.isNotEmpty() && sessionLines.last().rawText.let { text ->
+                val trimmed = text.trimEnd()
+                trimmed.endsWith("$") || trimmed.endsWith("#") || trimmed.endsWith(">") || trimmed.endsWith("%")
+            }
+            val hasPromptLine = hasPending || lastLineIsPrompt
+
+            if (hasPromptLine && sessionLines.isNotEmpty()) {
+                lastKnownPrompt = normalizePrompt(
+                    renderLineAnnotatedString(sessionLines.last(), currentTheme, searchQuery)
+                )
+            }
 
             val completedLines = if (hasPromptLine && sessionLines.isNotEmpty()) {
                 sessionLines.dropLast(1)
@@ -169,9 +205,7 @@ fun TerminalBufferView(
                 sessionLines
             }
 
-            val promptAnnotatedString: AnnotatedString = if (hasPromptLine && sessionLines.isNotEmpty()) {
-                renderLineAnnotatedString(sessionLines.last(), currentTheme, searchQuery)
-            } else {
+            val promptAnnotatedString: AnnotatedString = lastKnownPrompt ?: normalizePrompt(
                 buildAnnotatedString {
                     val promptPrefix = if (activeSession.hostLabel.isNotBlank()) {
                         "${activeSession.hostLabel}$ "
@@ -180,7 +214,7 @@ fun TerminalBufferView(
                     }
                     append(promptPrefix)
                 }
-            }
+            )
 
             SelectionContainer {
                 LazyColumn(
@@ -217,7 +251,9 @@ fun TerminalBufferView(
                             fontSizeSp = fontSizeSp,
                             currentTheme = currentTheme,
                             cursorStyle = cursorStyle,
-                            cursorVisible = cursorVisible
+                            cursorVisible = cursorVisible,
+                            onHistoryUp = onHistoryUp,
+                            onHistoryDown = onHistoryDown
                         )
                     }
                 }
@@ -237,8 +273,21 @@ fun TerminalPromptRow(
     currentTheme: TerminalThemePreset,
     cursorStyle: CursorStyle,
     cursorVisible: Boolean,
+    onHistoryUp: (() -> Unit)? = null,
+    onHistoryDown: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val dispatchEnter = {
+        if (inputText.isNotBlank()) {
+            BinBoxLogger.d("TerminalBufferView", "Prompt command dispatched: $inputText")
+            onSendCommand(inputText)
+            onInputTextChange("")
+        } else {
+            BinBoxLogger.d("TerminalBufferView", "Blank enter dispatched to shell")
+            onSendCommand("")
+        }
+    }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -266,6 +315,35 @@ fun TerminalPromptRow(
             modifier = Modifier
                 .weight(1f)
                 .focusRequester(inputFocusRequester)
+                .onPreviewKeyEvent { keyEvent ->
+                    if (keyEvent.type == KeyEventType.KeyDown) {
+                        when (keyEvent.key) {
+                            Key.Enter, Key.NumPadEnter -> {
+                                dispatchEnter()
+                                true
+                            }
+                            Key.DirectionUp -> {
+                                if (onHistoryUp != null) {
+                                    onHistoryUp()
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            Key.DirectionDown -> {
+                                if (onHistoryDown != null) {
+                                    onHistoryDown()
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            else -> false
+                        }
+                    } else {
+                        false
+                    }
+                }
                 .testTag("terminal_prompt_input"),
             textStyle = TextStyle(
                 fontFamily = FontFamily.Monospace,
@@ -281,13 +359,10 @@ fun TerminalPromptRow(
                 autoCorrect = false
             ),
             keyboardActions = KeyboardActions(
-                onSend = {
-                    if (inputText.isNotBlank()) {
-                        BinBoxLogger.d("TerminalBufferView", "Prompt command dispatched: $inputText")
-                        onSendCommand(inputText)
-                        onInputTextChange("")
-                    }
-                }
+                onSend = { dispatchEnter() },
+                onDone = { dispatchEnter() },
+                onGo = { dispatchEnter() },
+                onNext = { dispatchEnter() }
             ),
             singleLine = true,
             decorationBox = { innerTextField ->
@@ -297,7 +372,7 @@ fun TerminalPromptRow(
                 ) {
                     innerTextField()
 
-                    if (cursorVisible) {
+                    if (cursorVisible && cursorStyle != CursorStyle.BAR) {
                         when (cursorStyle) {
                             CursorStyle.BLOCK, CursorStyle.BLINKING_BLOCK -> {
                                 Box(
@@ -322,14 +397,7 @@ fun TerminalPromptRow(
                                         .testTag("terminal_cursor_underline")
                                 )
                             }
-                            CursorStyle.BAR -> {
-                                Box(
-                                    modifier = Modifier
-                                        .size(width = 2.dp, height = (fontSizeSp * 1.15).dp)
-                                        .background(ImmersivePrimary)
-                                        .testTag("terminal_cursor_bar")
-                                )
-                            }
+                            CursorStyle.BAR -> { /* Handled via cursorBrush */ }
                         }
                     }
                 }

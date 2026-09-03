@@ -63,10 +63,15 @@ class AnsiCsiHandler {
                             target.cursorCol = 0
                         }
                         "1" -> {
-                            target.currentSegmentBuilder.clear()
+                            if (target.cursorCol >= target.currentSegmentBuilder.length) {
+                                target.currentSegmentBuilder.clear()
+                                target.currentLineSegments.clear()
+                            }
                         }
                         "0", "" -> {
-                            target.currentSegmentBuilder.clear()
+                            if (target.cursorCol < target.currentSegmentBuilder.length) {
+                                target.currentSegmentBuilder.setLength(target.cursorCol)
+                            }
                         }
                     }
                 }

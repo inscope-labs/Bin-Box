@@ -29,6 +29,8 @@ fun TerminalQuickKeysBar(
     onSendRawInput: (String) -> Unit,
     onSendCommand: (String) -> Unit,
     onSendEnter: (() -> Unit)? = null,
+    onHistoryUp: (() -> Unit)? = null,
+    onHistoryDown: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -110,8 +112,26 @@ fun TerminalQuickKeysBar(
         ComboKeyPill(label = "^E", sub = "END", onClick = { onSendSpecialKey(TerminalKey.CTRL_E) })
 
         // Directional Arrows
-        AccessoryKeyButton(label = "▲", onClick = { onSendSpecialKey(TerminalKey.ARROW_UP) })
-        AccessoryKeyButton(label = "▼", onClick = { onSendSpecialKey(TerminalKey.ARROW_DOWN) })
+        AccessoryKeyButton(
+            label = "▲",
+            onClick = {
+                if (onHistoryUp != null) {
+                    onHistoryUp()
+                } else {
+                    onSendSpecialKey(TerminalKey.ARROW_UP)
+                }
+            }
+        )
+        AccessoryKeyButton(
+            label = "▼",
+            onClick = {
+                if (onHistoryDown != null) {
+                    onHistoryDown()
+                } else {
+                    onSendSpecialKey(TerminalKey.ARROW_DOWN)
+                }
+            }
+        )
         AccessoryKeyButton(label = "◀", onClick = { onSendSpecialKey(TerminalKey.ARROW_LEFT) })
         AccessoryKeyButton(label = "▶", onClick = { onSendSpecialKey(TerminalKey.ARROW_RIGHT) })
 
