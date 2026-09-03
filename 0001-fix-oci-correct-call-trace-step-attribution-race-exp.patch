@@ -1,0 +1,315 @@
+From f73325a52d57bcadb397cd74d2a3b4a7b1e60e63 Mon Sep 17 00:00:00 2001
+From: "Claude (Anthropic)" <claude@anthropic.com>
+Date: Sun, 30 Aug 2026 00:41:26 +0000
+Subject: [PATCH] fix(oci): correct call-trace step attribution race, expose
+ trace viewer on every stage
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- OciStepContext previously used a single shared AtomicReference for step
+  attribution, introduced when fixing an earlier ThreadLocal thread-hop bug.
+  This app has no re-entrancy guard on OCI-calling coroutines
+  (viewModelScope.launch for verify/discover/fetchShapes/fetchImages/
+  provisioning can genuinely overlap), so the shared reference could
+  silently mislabel one call's trace entries with another call's step.
+
+- Root cause of the original thread-hop bug: Retrofit's suspend function
+  support runs via Call.enqueue(), whose callback executes on OkHttp's own
+  pooled Dispatcher threads, not the calling coroutine's thread — so no
+  thread-local or coroutine-context mechanism (plain ThreadLocal or
+  kotlinx.coroutines asContextElement) can reach OciSigningInterceptor from
+  the call site.
+
+- Fix: OciStepContext reverts to a genuine per-thread ThreadLocal (correct,
+  since it's only read synchronously at Call-creation time). New
+  OciStepCallTagger (OkHttp EventListener.Factory) reads that value the
+  moment OkHttpClient.newCall() fires -- synchronously, on the true calling
+  thread, before any suspension -- and tags the immutable Call object
+  itself, which survives the async dispatch unlike ambient thread state.
+  OciSigningInterceptor now reads via OciStepCallTagger.stepFor(chain.call())
+  instead of ambient state.
+
+- OciOnboardingScreen: added a persistent 'API Call Traces' icon in the
+  wizard's top bar, visible on every stage regardless of error state --
+  the previous only entry points were inside OciDiagnosticsCard, gated
+  behind error != null && diagnostics != null, contradicting the 'available
+  at any time' requirement this feature exists to satisfy.
+
+Tests not updated as part of this change (OciStepContextTest.kt and
+OciSigningInterceptorTest.kt reference the prior design/API and will need
+revision) -- deferred per instruction.
+---
+ .../abx/binbox/oci/api/OciClient.kt           |  2 +
+ .../binbox/oci/api/OciSigningInterceptor.kt   |  8 ++-
+ .../oci/diagnostics/OciStepCallTagger.kt      | 61 ++++++++++++++++++
+ .../binbox/oci/diagnostics/OciStepContext.kt  | 62 ++++++++++++-------
+ .../binbox/oci/wizard/OciOnboardingScreen.kt  |  9 ++-
+ 5 files changed, 114 insertions(+), 28 deletions(-)
+ create mode 100644 app/src/main/java/com/inscopelabs/abx/binbox/oci/diagnostics/OciStepCallTagger.kt
+
+diff --git a/app/src/main/java/com/inscopelabs/abx/binbox/oci/api/OciClient.kt b/app/src/main/java/com/inscopelabs/abx/binbox/oci/api/OciClient.kt
+index 499ce0a..fef0ebd 100644
+--- a/app/src/main/java/com/inscopelabs/abx/binbox/oci/api/OciClient.kt
++++ b/app/src/main/java/com/inscopelabs/abx/binbox/oci/api/OciClient.kt
+@@ -9,6 +9,7 @@ import com.inscopelabs.abx.binbox.oci.api.networking.RouteTableApi
+ import com.inscopelabs.abx.binbox.oci.api.networking.SubnetApi
+ import com.inscopelabs.abx.binbox.oci.api.networking.VcnApi
+ import com.inscopelabs.abx.binbox.oci.api.networking.VnicApi
++import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepCallTagger
+ import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
+ import com.squareup.moshi.Moshi
+ import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+@@ -41,6 +42,7 @@ class OciClient(
+     private val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+ 
+     private val okHttpClient = OkHttpClient.Builder()
++        .eventListenerFactory(OciStepCallTagger)
+         .addInterceptor(OciSigningInterceptor(credentialsProvider))
+         .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+         .build()
+diff --git a/app/src/main/java/com/inscopelabs/abx/binbox/oci/api/OciSigningInterceptor.kt b/app/src/main/java/com/inscopelabs/abx/binbox/oci/api/OciSigningInterceptor.kt
+index 25aaad8..c2ba5c5 100644
+--- a/app/src/main/java/com/inscopelabs/abx/binbox/oci/api/OciSigningInterceptor.kt
++++ b/app/src/main/java/com/inscopelabs/abx/binbox/oci/api/OciSigningInterceptor.kt
+@@ -3,7 +3,7 @@ package com.inscopelabs.abx.binbox.oci.api
+ import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
+ import com.inscopelabs.abx.binbox.core.result.AppResult
+ import com.inscopelabs.abx.binbox.oci.auth.OciRequestSigner
+-import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepContext
++import com.inscopelabs.abx.binbox.oci.diagnostics.OciStepCallTagger
+ import com.inscopelabs.abx.binbox.oci.diagnostics.OciTraceRecorder
+ import com.inscopelabs.abx.binbox.oci.identity.OciCredentials
+ import okhttp3.Interceptor
+@@ -28,7 +28,11 @@ class OciSigningInterceptor(
+         val original = chain.request()
+         val timestampUtc = Instant.now().toString()
+         val traceId = UUID.randomUUID().toString()
+-        val (stageId, stepId) = OciStepContext.currentOrUnknown()
++        // Read via the tagged Call, not thread-ambient state: this interceptor runs on
++        // OkHttp's own dispatcher thread for Retrofit's enqueue()-based suspend calls,
++        // which is a different thread than whichever one called OciStepContext.withStep(...).
++        // See OciStepCallTagger's doc for why this is the only mechanism immune to that hop.
++        val (stageId, stepId) = OciStepCallTagger.stepFor(chain.call())
+         val method = original.method
+         val url = original.url.toString()
+ 
+diff --git a/app/src/main/java/com/inscopelabs/abx/binbox/oci/diagnostics/OciStepCallTagger.kt b/app/src/main/java/com/inscopelabs/abx/binbox/oci/diagnostics/OciStepCallTagger.kt
+new file mode 100644
+index 0000000..341b86b
+--- /dev/null
++++ b/app/src/main/java/com/inscopelabs/abx/binbox/oci/diagnostics/OciStepCallTagger.kt
+@@ -0,0 +1,61 @@
++package com.inscopelabs.abx.binbox.oci.diagnostics
++
++import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
++import okhttp3.Call
++import okhttp3.EventListener
++import java.io.IOException
++import java.util.concurrent.ConcurrentHashMap
++
++/**
++ * Bridges [OciStepContext]'s calling-thread-known step info onto the specific
++ * [okhttp3.Call] it belongs to.
++ *
++ * Why this exists, not a thread-local or coroutine-context read directly in the
++ * interceptor: Retrofit's `suspend fun ... : Response<T>` support (used by every
++ * API interface in this module) is built on `Call.enqueue()` — its callback fires
++ * on OkHttp's own pooled `Dispatcher` executor threads, which are plain background
++ * worker threads OkHttp manages internally and are never a coroutine-resumption
++ * point. That means [OciSigningInterceptor], which runs as part of that same
++ * dispatcher-thread execution, cannot see either a plain `ThreadLocal` set on the
++ * original calling thread, or a kotlinx.coroutines `ThreadContextElement`/
++ * `asContextElement` value (that machinery only updates thread-locals at coroutine
++ * resumption points, and the interceptor chain is not one — it's invoked from a
++ * plain `Runnable` OkHttp submits to its own `ExecutorService`).
++ *
++ * The one thing immune to that hop is the [okhttp3.Request]/[okhttp3.Call] object
++ * itself, since it's the same immutable instance passed through regardless of which
++ * thread eventually processes it. [EventListener.Factory.create] is the correct,
++ * stable, public OkHttp hook for this: it fires synchronously on whatever thread
++ * calls `OkHttpClient.newCall(request)` — which for a Retrofit suspend call happens
++ * before any suspension/enqueue — so reading [OciStepContext]'s per-thread value
++ * here is guaranteed correct for the specific call being created, with no shared
++ * mutable state and no risk of one concurrent call's context leaking into another's.
++ */
++object OciStepCallTagger : EventListener.Factory {
++
++    private const val TAG = "OciStepCallTagger"
++    private val tagsByCall = ConcurrentHashMap<Call, Pair<String, String>>()
++
++    override fun create(call: Call): EventListener {
++        val step = OciStepContext.currentThreadValue()
++        tagsByCall[call] = step
++        BinBoxLogger.d(TAG, "Tagged call ${call.request().url} with [${step.first}/${step.second}]")
++        return object : EventListener() {
++            override fun callEnd(call: Call) {
++                tagsByCall.remove(call)
++            }
++
++            override fun callFailed(call: Call, ioe: IOException) {
++                tagsByCall.remove(call)
++            }
++        }
++    }
++
++    /**
++     * Looks up the step info tagged for [call] at creation time. Safe to call from
++     * any thread — this is the correct accessor for [OciSigningInterceptor] and any
++     * other interceptor, regardless of which thread OkHttp is currently running on.
++     */
++    fun stepFor(call: Call): Pair<String, String> =
++        tagsByCall[call] ?: (OciStepContext.UNKNOWN_STAGE to OciStepContext.UNKNOWN_STEP)
++}
+diff --git a/app/src/main/java/com/inscopelabs/abx/binbox/oci/diagnostics/OciStepContext.kt b/app/src/main/java/com/inscopelabs/abx/binbox/oci/diagnostics/OciStepContext.kt
+index dc9b963..e8853a8 100644
+--- a/app/src/main/java/com/inscopelabs/abx/binbox/oci/diagnostics/OciStepContext.kt
++++ b/app/src/main/java/com/inscopelabs/abx/binbox/oci/diagnostics/OciStepContext.kt
+@@ -1,11 +1,25 @@
+ package com.inscopelabs.abx.binbox.oci.diagnostics
+ 
+ import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
+-import java.util.concurrent.atomic.AtomicReference
+ 
+ /**
+- * Context holder to correlate asynchronous/synchronous OCI provisioning steps
+- * with low-level OkHttp/Retrofit HTTP calls and call trace records.
++ * Context holder to correlate the calling code's known OCI provisioning
++ * step with the [okhttp3.Call] it's about to create.
++ *
++ * Backed by a genuine per-thread [ThreadLocal] — deliberately NOT a shared
++ * [java.util.concurrent.atomic.AtomicReference]. This app has no re-entrancy
++ * guard preventing overlapping in-flight OCI calls (e.g. two independent
++ * `viewModelScope.launch` calls racing from [OciOnboardingViewModel]), so a
++ * single shared value would silently misattribute one call's trace entries
++ * to another call's step whenever two calls are genuinely concurrent.
++ *
++ * This value is only ever correct when read synchronously, on the same
++ * thread, before any suspension occurs — which is exactly what
++ * [OciStepCallTagger] does (see its doc for why that boundary matters and
++ * how the value survives past it). Do not read [currentThreadValue] from
++ * inside an OkHttp interceptor or anything else that might run on a
++ * different thread than the one that called [withStep] — use
++ * [OciStepCallTagger.stepFor] with the actual `Call` instead.
+  */
+ object OciStepContext {
+     const val UNKNOWN_STAGE = "UNKNOWN"
+@@ -13,46 +27,46 @@ object OciStepContext {
+     @PublishedApi internal const val TAG = "OciStepContext"
+ 
+     @PublishedApi
+-    internal val activeContext = AtomicReference<Pair<String, String>?>(null)
++    internal val threadLocal = ThreadLocal<Pair<String, String>?>()
+ 
+     /**
+-     * Executes the given [block] within the scope of the provided [stageId] and [stepId].
+-     * Restores the previous context upon block completion or thrown exception.
++     * Executes the given [block] within the scope of the provided [stageId] and [stepId],
++     * on the calling thread. Restores the previous context upon block completion or thrown
++     * exception, so nesting (e.g. a coarse resume-level step wrapping finer discovery steps)
++     * behaves correctly.
+      */
+     inline fun <T> withStep(stageId: String, stepId: String, block: () -> T): T {
+-        val previous = activeContext.get()
+-        val current = stageId to stepId
+-        activeContext.set(current)
++        val previous = threadLocal.get()
++        threadLocal.set(stageId to stepId)
+         BinBoxLogger.d(TAG, "Entering step context: [$stageId / $stepId]")
+         try {
+             return block()
+         } finally {
+-            activeContext.set(previous)
++            threadLocal.set(previous)
+             BinBoxLogger.d(TAG, "Exiting step context: [$stageId / $stepId] (restored: ${previous?.first ?: UNKNOWN_STAGE}/${previous?.second ?: UNKNOWN_STEP})")
+         }
+     }
+ 
+     /**
+-     * Retrieves the active (stageId, stepId) pair,
+-     * or ("UNKNOWN", "unknown") if no context has been set.
++     * Reads the active (stageId, stepId) pair for the CALLING thread, or
++     * ("UNKNOWN", "unknown") if none is set. Only meaningful when called
++     * synchronously from the same thread as an enclosing [withStep] — see
++     * [OciStepCallTagger], which is the only intended caller in production
++     * code.
+      */
+-    fun currentOrUnknown(): Pair<String, String> {
+-        return activeContext.get() ?: (UNKNOWN_STAGE to UNKNOWN_STEP)
+-    }
++    fun currentThreadValue(): Pair<String, String> = threadLocal.get() ?: (UNKNOWN_STAGE to UNKNOWN_STEP)
+ 
+     /**
+-     * Explicitly sets the active step context.
++     * Alias for [currentThreadValue], kept for source compatibility with existing
++     * callers/tests written against the prior design. Same same-thread-only caveat
++     * applies — prefer [currentThreadValue] in new code, called only from
++     * [OciStepCallTagger].
+      */
+-    fun set(stageId: String, stepId: String) {
+-        activeContext.set(stageId to stepId)
+-        BinBoxLogger.d(TAG, "Explicitly set step context: [$stageId / $stepId]")
+-    }
++    fun currentOrUnknown(): Pair<String, String> = currentThreadValue()
+ 
+-    /**
+-     * Clears the active step context.
+-     */
++    /** Test-only / explicit reset hook. */
+     fun clear() {
+-        activeContext.set(null)
++        threadLocal.set(null)
+         BinBoxLogger.d(TAG, "Cleared step context")
+     }
+ }
+diff --git a/app/src/main/java/com/inscopelabs/abx/binbox/oci/wizard/OciOnboardingScreen.kt b/app/src/main/java/com/inscopelabs/abx/binbox/oci/wizard/OciOnboardingScreen.kt
+index b45af3d..90128c3 100644
+--- a/app/src/main/java/com/inscopelabs/abx/binbox/oci/wizard/OciOnboardingScreen.kt
++++ b/app/src/main/java/com/inscopelabs/abx/binbox/oci/wizard/OciOnboardingScreen.kt
+@@ -14,8 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.foundation.verticalScroll
+ import androidx.compose.material.icons.Icons
+ import androidx.compose.material.icons.automirrored.filled.ArrowBack
+-import androidx.compose.material.icons.filled.Close
+-import androidx.compose.material.icons.filled.RestartAlt
++import androidx.compose.material.icons.filled.*
+ import androidx.compose.material3.*
+ import androidx.compose.runtime.*
+ import androidx.compose.ui.Alignment
+@@ -27,6 +26,7 @@ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.sp
+ import androidx.lifecycle.compose.collectAsStateWithLifecycle
+ import androidx.lifecycle.viewmodel.compose.viewModel
++import com.inscopelabs.abx.binbox.oci.diagnostics.OciCallTraceViewerDialog
+ import com.inscopelabs.abx.binbox.ui.theme.*
+ 
+ /**
+@@ -42,6 +42,7 @@ fun OciOnboardingScreen(
+     val stage by viewModel.stage.collectAsStateWithLifecycle()
+     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+     var showStartOverConfirm by remember { mutableStateOf(false) }
++    var showTraceViewer by remember { mutableStateOf(false) }
+ 
+     LaunchedEffect(stage) {
+         if (stage == OciOnboardingStage.SHELL_READY) onShellReady()
+@@ -101,6 +102,8 @@ fun OciOnboardingScreen(
+                             }
+                         }
+                         Row(verticalAlignment = Alignment.CenterVertically) {
++                            // Always visible on every stage — not gated behind an error state.
++                            IconButton(onClick = { showTraceViewer = true }, modifier = Modifier.testTag("oci_wizard_trace_viewer_icon")) { Icon(Icons.Default.BugReport, contentDescription = "API Call Traces", tint = ImmersiveTextSecondary) }
+                             if (stage != OciOnboardingStage.WELCOME && stage != OciOnboardingStage.SHELL_READY) {
+                                 IconButton(
+                                     onClick = { showStartOverConfirm = true },
+@@ -223,6 +226,8 @@ fun OciOnboardingScreen(
+         }
+     }
+ 
++    if (showTraceViewer) OciCallTraceViewerDialog(onDismiss = { showTraceViewer = false })
++
+     if (showStartOverConfirm) {
+         AlertDialog(
+             onDismissRequest = { showStartOverConfirm = false },
+-- 
+2.43.0
+
