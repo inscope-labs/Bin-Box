@@ -28,6 +28,7 @@ fun TerminalQuickKeysBar(
     onSendSpecialKey: (TerminalKey) -> Unit,
     onSendRawInput: (String) -> Unit,
     onSendCommand: (String) -> Unit,
+    onSendEnter: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -46,6 +47,17 @@ fun TerminalQuickKeysBar(
         AccessoryKeyButton(
             label = "TAB",
             onClick = { onSendSpecialKey(TerminalKey.TAB) }
+        )
+        AccessoryKeyButton(
+            label = "ENTER",
+            onClick = {
+                if (onSendEnter != null) {
+                    onSendEnter()
+                } else {
+                    onSendRawInput("\n")
+                }
+            },
+            accentColor = ImmersivePrimary
         )
         AccessoryKeyButton(
             label = "CTRL",

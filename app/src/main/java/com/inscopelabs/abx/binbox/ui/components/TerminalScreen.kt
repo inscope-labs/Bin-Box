@@ -15,6 +15,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.inscopelabs.abx.binbox.oci.wizard.LocalOciWizardLauncher
+import com.inscopelabs.abx.binbox.terminal.engine.TerminalKey
 import com.inscopelabs.abx.binbox.terminal.model.*
 import com.inscopelabs.abx.binbox.ui.components.terminal.*
 import com.inscopelabs.abx.binbox.ui.theme.*
@@ -41,7 +42,6 @@ fun TerminalScreen(
     val altLatched by viewModel.altLatched.collectAsStateWithLifecycle()
     val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
-    val history by viewModel.history.collectAsStateWithLifecycle()
     val activeWorkspace by viewModel.activeWorkspace.collectAsStateWithLifecycle()
     val workspaces by viewModel.workspaces.collectAsStateWithLifecycle()
     val connectionProfiles by viewModel.connectionProfiles.collectAsStateWithLifecycle()
@@ -65,10 +65,10 @@ fun TerminalScreen(
 
     val listState = rememberLazyListState()
 
-    // Auto-scroll to bottom on new output
-    LaunchedEffect(sessionLines.size) {
+    // Auto-scroll to bottom on new output or prompt input changes
+    LaunchedEffect(sessionLines.size, inputText) {
         if (sessionLines.isNotEmpty()) {
-            listState.animateScrollToItem(sessionLines.size - 1)
+            listState.animateScrollToItem(sessionLines.size)
         }
     }
 
@@ -149,7 +149,7 @@ fun TerminalScreen(
             )
         }
 
-        // 4. Immersive Floating Terminal Window
+        // 4. Square-Cornered Terminal Window with Integrated Prompt
         TerminalBufferView(
             activeSession = activeSession,
             sessionLines = sessionLines,
@@ -159,6 +159,10 @@ fun TerminalScreen(
             cursorStyle = cursorStyle,
             cursorVisible = cursorVisible,
             searchQuery = searchQuery,
+            inputText = inputText,
+            onInputTextChange = { inputText = it },
+            onSendCommand = { viewModel.sendCommand(it) },
+            inputFocusRequester = inputFocusRequester,
             onLaunchDemo = { viewModel.openDemoSession() },
             onLaunchLocal = { viewModel.openLocalSession() },
             onLaunchOci = { ociLauncher() },
@@ -170,27 +174,30 @@ fun TerminalScreen(
             color = ImmersiveBg,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column {
-                TerminalQuickKeysBar(
-                    ctrlLatched = ctrlLatched,
-                    altLatched = altLatched,
-                    onToggleCtrl = { viewModel.toggleCtrl() },
-                    onToggleAlt = { viewModel.toggleAlt() },
-                    onSendSpecialKey = { viewModel.sendSpecialKey(it) },
-                    onSendRawInput = { viewModel.sendRawInput(it) },
-                    onSendCommand = { viewModel.sendCommand(it) }
-                )
-
-                // 6. Immersive Command Input Capsule
-                TerminalInputCapsule(
-                    inputText = inputText,
-                    onInputTextChange = { inputText = it },
-                    onSendCommand = { viewModel.sendCommand(it) },
-                    onSendSpecialKey = { viewModel.sendSpecialKey(it) },
-                    history = history,
-                    inputFocusRequester = inputFocusRequester
-                )
-            }
+            TerminalQuickKeysBar(
+                ctrlLatched = ctrlLatched,
+                altLatched = altLatched,
+                onToggleCtrl = { viewModel.toggleCtrl() },
+                onToggleAlt = { viewModel.toggleAlt() },
+                onSendSpecialKey = { specialKey ->
+                    if (specialKey == TerminalKey.CTRL_C) {
+                        inputText = ""
+                    }
+                    viewModel.sendSpecialKey(specialKey)
+                },
+                onSendRawInput = { rawText ->
+                    inputText += rawText
+                },
+                onSendCommand = { viewModel.sendCommand(it) },
+                onSendEnter = {
+                    if (inputText.isNotBlank()) {
+                        viewModel.sendCommand(inputText)
+                        inputText = ""
+                    } else {
+                        viewModel.sendRawInput("\n")
+                    }
+                }
+            )
         }
 
         // Rename Session Tab Dialog

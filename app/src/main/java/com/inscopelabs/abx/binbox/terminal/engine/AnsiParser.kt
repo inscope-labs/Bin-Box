@@ -54,6 +54,11 @@ class AnsiParser(
     }
 
     @Synchronized
+    fun hasPendingLine(): Boolean {
+        return currentSegmentBuilder.isNotEmpty() || currentLineSegments.isNotEmpty()
+    }
+
+    @Synchronized
     fun clear() {
         primaryBuffer.clear()
         alternateBuffer.clear()

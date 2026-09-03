@@ -46,6 +46,9 @@ class SandboxDemoShellSession(
     override val isBracketedPasteMode: Boolean
         get() = ansiParser.isBracketedPasteMode
 
+    override val hasPendingLine: Boolean
+        get() = ansiParser.hasPendingLine()
+
     @Volatile
     override var isScreenOutputMuted: Boolean = false
 

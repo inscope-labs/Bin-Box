@@ -49,6 +49,7 @@ interface ShellSession {
     val bytesReceived: StateFlow<Long> get() = kotlinx.coroutines.flow.MutableStateFlow(0L)
     val bytesSent: StateFlow<Long> get() = kotlinx.coroutines.flow.MutableStateFlow(0L)
     val isBracketedPasteMode: Boolean get() = false
+    val hasPendingLine: Boolean get() = false
     var isScreenOutputMuted: Boolean
         get() = false
         set(_) {}
@@ -96,6 +97,9 @@ open class TransportShellSession(
 
     override val isBracketedPasteMode: Boolean
         get() = ansiParser.isBracketedPasteMode
+
+    override val hasPendingLine: Boolean
+        get() = ansiParser.hasPendingLine()
 
     @Volatile
     override var isScreenOutputMuted: Boolean = false
