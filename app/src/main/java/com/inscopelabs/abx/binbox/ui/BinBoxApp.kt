@@ -34,6 +34,7 @@ import com.inscopelabs.abx.binbox.ui.components.*
 import com.inscopelabs.abx.binbox.ui.components.navigation.BinBoxBottomBar
 import com.inscopelabs.abx.binbox.ui.components.navigation.MoreNavigationBottomSheet
 import com.inscopelabs.abx.binbox.ui.components.terminal.FileTransferBottomSheet
+import com.inscopelabs.abx.binbox.ui.components.terminal.TerminalSessionTabsBar
 import com.inscopelabs.abx.binbox.ui.i18n.LocalAppStrings
 import com.inscopelabs.abx.binbox.ui.theme.*
 import com.inscopelabs.abx.binbox.ui.viewmodel.AppTab
@@ -62,6 +63,8 @@ fun BinBoxApp(
     val snackbarHostState = remember { SnackbarHostState() }
     var isMoreMenuOpen by remember { mutableStateOf(false) }
     var isFileTransferSheetOpen by remember { mutableStateOf(false) }
+    var showPackagesSheet by remember { mutableStateOf(false) }
+    val isSessionSwitcherOpen by viewModel.isSessionSwitcherOpen.collectAsStateWithLifecycle()
 
     LaunchedEffect(snackbarMsg) {
         snackbarMsg?.let { msg ->
@@ -223,21 +226,32 @@ fun BinBoxApp(
             )
         }
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            Crossfade(
-                targetState = currentTab,
-                label = "tab_crossfade"
-            ) { tab ->
-                when (tab) {
-                    AppTab.TERMINAL -> TerminalScreen(viewModel = viewModel)
-                    AppTab.HOSTS -> HostsScreen(viewModel = viewModel)
-                    AppTab.SNIPPETS -> SnippetsScreen(viewModel = viewModel)
-                    AppTab.KEYS -> KeysScreen(viewModel = viewModel)
-                    AppTab.SETTINGS -> SettingsScreen(viewModel = viewModel)
+            // Unified Terminal & Hosts Session Tabs Bar (Top level for Terminal and Hosts modes)
+            if (currentTab == AppTab.TERMINAL || currentTab == AppTab.HOSTS) {
+                TerminalSessionTabsBar(
+                    viewModel = viewModel,
+                    onOpenOciWizard = { onSetShowOciWizard(true) },
+                    onOpenPackagesSheet = { showPackagesSheet = true }
+                )
+            }
+
+            Box(modifier = Modifier.weight(1f)) {
+                Crossfade(
+                    targetState = currentTab,
+                    label = "tab_crossfade"
+                ) { tab ->
+                    when (tab) {
+                        AppTab.TERMINAL -> TerminalScreen(viewModel = viewModel, showTabsBar = false)
+                        AppTab.HOSTS -> HostsScreen(viewModel = viewModel)
+                        AppTab.SNIPPETS -> SnippetsScreen(viewModel = viewModel)
+                        AppTab.KEYS -> KeysScreen(viewModel = viewModel)
+                        AppTab.SETTINGS -> SettingsScreen(viewModel = viewModel)
+                    }
                 }
             }
         }
@@ -325,6 +339,21 @@ fun BinBoxApp(
         FileTransferBottomSheet(
             activeSession = activeSession,
             onDismiss = { isFileTransferSheetOpen = false }
+        )
+    }
+
+    // Session Switcher Bottom Sheet (Active terminals quick switcher)
+    if (isSessionSwitcherOpen) {
+        SessionSwitcherSheet(
+            viewModel = viewModel,
+            onDismiss = { viewModel.setSessionSwitcherOpen(false) }
+        )
+    }
+
+    // Local Shell Packages Bottom Sheet
+    if (showPackagesSheet) {
+        LocalShellModulesSheet(
+            onDismiss = { showPackagesSheet = false }
         )
     }
 }

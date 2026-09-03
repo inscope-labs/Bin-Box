@@ -27,6 +27,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun TerminalScreen(
     viewModel: BinBoxViewModel,
+    showTabsBar: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -118,26 +119,14 @@ fun TerminalScreen(
             .fillMaxSize()
             .background(ImmersiveBg)
     ) {
-        // 1. Session Tabs Strip & Quick Actions
-        TerminalSessionTabsBar(
-            sessions = sessions,
-            activeIdx = activeIdx,
-            activeWorkspace = activeWorkspace,
-            workspaces = workspaces,
-            onSelectSession = { viewModel.selectSession(it) },
-            onCloseSession = { viewModel.closeSession(it) },
-            onOpenRenameDialog = { viewModel.openRenameDialog(it) },
-            onDuplicateSession = { viewModel.duplicateSession(it) },
-            onMoveSession = { from, to -> viewModel.moveSession(from, to) },
-            onSwitchWorkspace = { viewModel.switchWorkspace(it) },
-            onOpenWorkspaceDialog = { viewModel.openWorkspaceDialog() },
-            onOpenSessionSwitcher = { viewModel.setSessionSwitcherOpen(true) },
-            onOpenDemoSession = { viewModel.openDemoSession() },
-            onOpenLocalSession = { viewModel.openLocalSession() },
-            onOpenOciWizard = { ociLauncher() },
-            onOpenPackagesSheet = { showPackagesSheet = true },
-            onNavigateToHosts = { viewModel.setAppTab(AppTab.HOSTS) }
-        )
+        // 1. Session Tabs Strip & Quick Actions (when showTabsBar is requested)
+        if (showTabsBar) {
+            TerminalSessionTabsBar(
+                viewModel = viewModel,
+                onOpenOciWizard = { ociLauncher() },
+                onOpenPackagesSheet = { showPackagesSheet = true }
+            )
+        }
 
         // 2. Terminal Utility Action Bar (Search, Font, Clear, Telemetry, Transfer)
         TerminalUtilityBar(
