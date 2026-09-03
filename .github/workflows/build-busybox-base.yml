@@ -1,0 +1,88 @@
+name: Build BusyBox Base Tier (RTX-100 Phase 1)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BUSYBOX_MIRROR_COMMIT: 1a64f6a20aaf6ea4dbba68bbfa8cc1ab7e5c57c4
+  BUSYBOX_TARBALL_SHA256: 076a7449075feea57afc2750b10a9ff5e95e93f782ad454404fedd10a27c2933
+  NDK_VERSION: 27.3.13750724
+  MIN_SDK: 24
+
+jobs:
+  build:
+    name: Build (${{ matrix.abi }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            triple: aarch64-linux-android
+          - abi: x86_64
+            triple: x86_64-linux-android
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27d
+          add-to-path: false
+
+      - name: Fetch pinned BusyBox source
+        run: |
+          set -e
+          curl -sL "https://codeload.github.com/mirror/busybox/tar.gz/${BUSYBOX_MIRROR_COMMIT}" \
+            -o busybox-src.tar.gz
+          echo "${BUSYBOX_TARBALL_SHA256}  busybox-src.tar.gz" | sha256sum -c -
+          mkdir -p busybox-src
+          tar -xzf busybox-src.tar.gz --strip-components=1 -C busybox-src
+
+      - name: Apply Base-tier config
+        run: |
+          set -e
+          cp native/busybox/configs/base.config busybox-src/.config
+          cd busybox-src
+          yes "" | make oldconfig
+          # Fail loudly if oldconfig silently dropped any target applet -
+          # a config drift here means this ABI's binary would be missing
+          # an applet that Phase 1.4 verified should exist.
+          for sym in ASH LS CP MV RM MKDIR CAT CHMOD PS KILL ENV WHICH UNAME PIE SH_IS_ASH; do
+            grep -q "^CONFIG_${sym}=y$" .config || { echo "MISSING CONFIG_${sym}"; exit 1; }
+          done
+
+      - name: Cross-compile for ${{ matrix.abi }}
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -e
+          TOOLCHAIN="${NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cd busybox-src
+          make -j"$(nproc)" \
+            CC="${TOOLCHAIN}/${{ matrix.triple }}${MIN_SDK}-clang" \
+            AR="${TOOLCHAIN}/llvm-ar" \
+            STRIP="${TOOLCHAIN}/llvm-strip" \
+            RANLIB="${TOOLCHAIN}/llvm-ranlib" \
+            NM="${TOOLCHAIN}/llvm-nm"
+
+      - name: Verify output binary
+        run: |
+          set -e
+          cd busybox-src
+          file busybox_unstripped | tee /dev/stderr | grep -q "ELF" || { echo "not an ELF binary"; exit 1; }
+          "${STRIP:-strip}" -o busybox busybox_unstripped 2>/dev/null || cp busybox_unstripped busybox
+
+      - name: Upload ${{ matrix.abi }} binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: busybox-base-${{ matrix.abi }}
+          path: busybox-src/busybox
+          if-no-files-found: error
