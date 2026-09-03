@@ -25,6 +25,8 @@ jobs:
             triple: aarch64-linux-android
           - abi: x86_64
             triple: x86_64-linux-android
+          - abi: armeabi-v7a
+            triple: armv7a-linux-androideabi
 
     steps:
       - name: Checkout Repository
