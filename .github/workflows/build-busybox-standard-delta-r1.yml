@@ -1,4 +1,4 @@
-name: Build BusyBox Standard-Delta Tier (RTX-100 Phase 2.1b)
+name: Build BusyBox Standard-Delta Tier (RTX-100 Phase 2.1b_r1)
 
 on:
   workflow_dispatch:
@@ -56,6 +56,8 @@ jobs:
 
           test -x "$TOOLCHAIN/llvm-ar"
           test -x "$TOOLCHAIN/llvm-strip"
+          test -x "$TOOLCHAIN/llvm-ranlib"
+          test -x "$TOOLCHAIN/llvm-nm"
 
           echo "NDK_HOME=$NDK_HOME"
           echo "Toolchain=$TOOLCHAIN"
@@ -90,67 +92,142 @@ jobs:
 
           cd busybox-src
 
-          # The repository configuration is a DELTA specification.
+          echo "Creating clean all-disabled BusyBox configuration..."
+
+          # BusyBox provides allnoconfig specifically for creating
+          # a new configuration with every option answered "no".
           #
-          # It must not be passed directly to "make oldconfig", because
-          # unspecified BusyBox symbols can acquire their Kconfig defaults.
+          # IMPORTANT:
+          # Do NOT run oldconfig or olddefconfig here.
           #
-          # In particular, BusyBox's shell choice defaults to SH_IS_ASH.
-          # That would incorrectly pull the Base shell into this Standard
-          # delta.
-          #
-          # Therefore:
-          #
-          #   1. Start from allnoconfig.
-          #   2. Enable ONLY the Standard-delta symbols.
-          #   3. Explicitly force both shell aliases to NONE.
-          #   4. Normalize the result with olddefconfig.
-          #
-          # This produces a complete, deterministic CI .config.
+          # This pinned BusyBox release does not provide olddefconfig,
+          # and oldconfig is interactive by design.
 
           make allnoconfig
 
+          test -f .config
+
+          #
+          # Helper:
+          # Replace an existing Kconfig assignment with the requested
+          # value, or append it if allnoconfig did not emit the symbol.
+          #
+          set_config() {
+            local sym="$1"
+            local value="$2"
+
+            if grep -q "^CONFIG_${sym}=" .config; then
+              sed -i \
+                "s/^CONFIG_${sym}=.*/CONFIG_${sym}=${value}/" \
+                .config
+            elif grep -q "^# CONFIG_${sym} is not set$" .config; then
+              sed -i \
+                "s/^# CONFIG_${sym} is not set$/CONFIG_${sym}=${value}/" \
+                .config
+            else
+              printf 'CONFIG_%s=%s\n' "$sym" "$value" >> .config
+            fi
+          }
+
+          #
           # Standard-delta applets.
-          cat >> .config <<'EOF'
+          #
+          for sym in \
+            GREP \
+            SED \
+            AWK \
+            FIND \
+            DU \
+            DF \
+            STAT \
+            TAR \
+            GZIP \
+            UNZIP \
+            WGET \
+            PING \
+            LESS \
+            HEAD \
+            TAIL \
+            WC \
+            SORT \
+            UNIQ \
+            CUT \
+            DIFF \
+            XARGS \
+            TEE
+          do
+            set_config "$sym" y
+          done
 
-          CONFIG_GREP=y
-          CONFIG_SED=y
-          CONFIG_AWK=y
-          CONFIG_FIND=y
-          CONFIG_DU=y
-          CONFIG_DF=y
-          CONFIG_STAT=y
-          CONFIG_TAR=y
-          CONFIG_GZIP=y
-          CONFIG_UNZIP=y
-          CONFIG_WGET=y
-          CONFIG_PING=y
-          CONFIG_LESS=y
-          CONFIG_HEAD=y
-          CONFIG_TAIL=y
-          CONFIG_WC=y
-          CONFIG_SORT=y
-          CONFIG_UNIQ=y
-          CONFIG_CUT=y
-          CONFIG_DIFF=y
-          CONFIG_XARGS=y
-          CONFIG_TEE=y
+          #
+          # Explicitly select NONE for every shell alias choice.
+          #
+          # This is important because Standard-delta must NOT inherit
+          # ash/hush merely because Kconfig has a default.
+          #
+          set_config SH_IS_NONE y
+          set_config SH_IS_ASH n
+          set_config SH_IS_HUSH n
 
-          CONFIG_SH_IS_NONE=y
-          EOF
+          #
+          # Explicitly disable the actual shell implementations.
+          #
+          set_config ASH n
+          set_config HUSH n
+          set_config SHELL_ASH n
+          set_config SHELL_HUSH n
+          set_config CTTYHACK n
 
-          # Normalize the configuration without interactive prompts.
-          make olddefconfig
+          #
+          # Disable common shell infrastructure.
+          #
+          set_config FEATURE_SH_MATH n
+          set_config FEATURE_SH_EXTRA_QUIET n
+          set_config FEATURE_SH_STANDALONE n
+          set_config FEATURE_SH_NOFORK n
+          set_config FEATURE_SH_READ_FRAC n
+          set_config FEATURE_SH_HISTFILESIZE n
+          set_config FEATURE_SH_EMBEDDED_SCRIPTS n
+
+          #
+          # Disable additional shell-dependent functionality.
+          #
+          set_config ASH_OPTIMIZE_FOR_SIZE n
+          set_config ASH_INTERNAL_GLOB n
+          set_config ASH_BASH_COMPAT n
+          set_config ASH_JOB_CONTROL n
+          set_config ASH_ALIAS n
+          set_config ASH_RANDOM_SUPPORT n
+          set_config ASH_EXPAND_PRMT n
+          set_config ASH_IDLE_TIMEOUT n
+          set_config ASH_MAIL n
+          set_config ASH_ECHO n
+          set_config ASH_PRINTF n
+          set_config ASH_TEST n
+          set_config ASH_SLEEP n
+          set_config ASH_HELP n
+          set_config ASH_GETOPTS n
+          set_config ASH_CMDCMD n
+
+          #
+          # Prevent unrelated utilities from being pulled in.
+          #
+          set_config KLOGD n
+          set_config LOGGER n
+          set_config LOGREAD n
+          set_config SYSLOGD n
+
+          #
+          # BusyBox's own Kconfig Makefile documents that when .config
+          # is modified after allnoconfig, a delay is required before
+          # the normal build so include/autoconf.h is regenerated.
+          #
+          sleep 2
 
           echo
-          echo "===== Standard-delta configuration ====="
-          grep -E \
-            '^(CONFIG_(GREP|SED|AWK|FIND|DU|DF|STAT|TAR|GZIP|UNZIP|WGET|PING|LESS|HEAD|TAIL|WC|SORT|UNIQ|CUT|DIFF|XARGS|TEE|SH_IS_NONE)|# CONFIG_(ASH|LS|CP|MV|RM|MKDIR|CAT|CHMOD|PS|KILL|ENV|WHICH|UNAME|SH_IS_ASH|SHELL_ASH) is not set)' \
-            .config \
-            || true
-
-          echo
-          echo "===== Positive Standard-delta checks ====="
+          echo "=============================================="
+          echo "Standard-delta positive configuration"
+          echo "=============================================="
 
           for sym in \
             GREP \
@@ -178,16 +255,19 @@ jobs:
             SH_IS_NONE
           do
             grep -q "^CONFIG_${sym}=y$" .config || {
-              echo "ERROR: MISSING CONFIG_${sym}=y"
+              echo "ERROR: CONFIG_${sym}=y is missing"
               exit 1
             }
           done
 
           echo
-          echo "===== Negative Base-tier checks ====="
+          echo "=============================================="
+          echo "Base-tier exclusion checks"
+          echo "=============================================="
 
           for sym in \
             ASH \
+            HUSH \
             LS \
             CP \
             MV \
@@ -200,30 +280,28 @@ jobs:
             ENV \
             WHICH \
             UNAME \
+            SHELL_ASH \
+            SHELL_HUSH \
+            CTTYHACK \
             SH_IS_ASH \
-            SHELL_ASH
+            SH_IS_HUSH
           do
             if grep -q "^CONFIG_${sym}=y$" .config; then
-              echo "ERROR: UNEXPECTED CONFIG_${sym}=y"
-              echo "This is a Base-tier symbol and must not appear in Standard-delta."
+              echo "ERROR: CONFIG_${sym}=y"
+              echo "This symbol must not be enabled in Standard-delta."
               exit 1
             fi
           done
 
           echo
-          echo "===== Shell exclusion checks ====="
+          echo "=============================================="
+          echo "Final relevant configuration"
+          echo "=============================================="
 
-          grep -q "^CONFIG_SH_IS_NONE=y$" .config
-
-          if grep -q "^CONFIG_SH_IS_ASH=y$" .config; then
-            echo "ERROR: SH_IS_ASH unexpectedly enabled"
-            exit 1
-          fi
-
-          if grep -q "^CONFIG_SHELL_ASH=y$" .config; then
-            echo "ERROR: SHELL_ASH unexpectedly enabled"
-            exit 1
-          fi
+          grep -E \
+            '^CONFIG_(GREP|SED|AWK|FIND|DU|DF|STAT|TAR|GZIP|UNZIP|WGET|PING|LESS|HEAD|TAIL|WC|SORT|UNIQ|CUT|DIFF|XARGS|TEE|SH_IS_NONE|SH_IS_ASH|SH_IS_HUSH|ASH|HUSH|SHELL_ASH|SHELL_HUSH|CTTYHACK)=' \
+            .config \
+            || true
 
           echo
           echo "Standard-delta configuration validated successfully."
@@ -235,6 +313,7 @@ jobs:
           set -eux
 
           TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
           CC="$TOOLCHAIN/${{ matrix.triple }}${MIN_SDK}-clang"
 
           test -x "$CC"
@@ -265,7 +344,7 @@ jobs:
 
           file busybox_unstripped \
             | grep -q "ELF" || {
-              echo "ERROR: output is not an ELF binary"
+              echo "ERROR: busybox_unstripped is not an ELF binary"
               exit 1
             }
 
