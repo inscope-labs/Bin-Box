@@ -53,7 +53,16 @@ jobs:
           set -e
           cp native/busybox/configs/base.config busybox-src/.config
           cd busybox-src
+          # yes|make oldconfig is a known pipefail trap: oldconfig can
+          # finish reading before `yes` is done writing, SIGPIPE-killing
+          # `yes` even though oldconfig itself succeeded. GH Actions'
+          # default shell runs with pipefail, so that non-fatal SIGPIPE
+          # would otherwise fail this step. The real success gate is the
+          # CONFIG_* verification loop below, not this pipeline's exit
+          # code.
+          set +o pipefail
           yes "" | make oldconfig
+          set -o pipefail
           # Fail loudly if oldconfig silently dropped any target applet -
           # a config drift here means this ABI's binary would be missing
           # an applet that Phase 1.4 verified should exist.
