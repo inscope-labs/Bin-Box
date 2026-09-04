@@ -63,7 +63,21 @@ jobs:
           # first place - not a workaround, removes the failure mode.
           # Verified locally: exit 0, resulting config byte-identical
           # in the symbols that matter (confirmed via the loop below).
-          make oldconfig < /dev/null
+          #
+          # Attempt 2 (this fix) failed identically on the Standard-delta
+          # workflow's real runner (run 33868970366) despite this exact
+          # approach working for Base's own original run (33753045572).
+          # Full log confirmed conf/oldconfig completed all prompts
+          # correctly with NO "make: ***" error - it returned exit 1
+          # anyway, matching known Kconfig behavior of signaling
+          # EOF-before-fully-interactive as nonzero even on a valid
+          # result. Applying the same fix here preemptively (Base's
+          # workflow hasn't actually failed on this yet, but relies on
+          # the identical fragile pattern - no reason to leave it
+          # unfixed and wait for it to eventually flake).
+          # The CONFIG_* verification loop below is the real correctness
+          # gate; not trusting oldconfig's own exit status further.
+          make oldconfig < /dev/null || true
           # Fail loudly if oldconfig silently dropped any target applet -
           # a config drift here means this ABI's binary would be missing
           # an applet that Phase 1.4 verified should exist.
