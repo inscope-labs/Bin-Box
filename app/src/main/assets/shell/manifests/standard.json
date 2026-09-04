@@ -1,56 +1,47 @@
 {
   "tier": "standard",
   "version": "1.0.0",
-  "description": "Standard productivity shell tools including networking, archives, and editors",
-  "binaries": [
+  "source": {
+    "project": "BusyBox",
+    "license": "GPL-2.0-only",
+    "upstreamVersion": "1.36.1",
+    "mirrorUrl": "https://github.com/mirror/busybox",
+    "commit": "1a64f6a20aaf6ea4dbba68bbfa8cc1ab7e5c57c4"
+  },
+  "sharedBinaries": [
     {
-      "name": "curl",
-      "description": "Command line tool for transferring data with URLs",
-      "category": "network",
-      "nativeLibName": "libcurl.so",
-      "required": false
-    },
-    {
-      "name": "tar",
-      "description": "Tar archiving utility",
-      "category": "archive",
-      "fallbackSystemPath": "/system/bin/tar",
-      "required": false
-    },
-    {
-      "name": "gzip",
-      "description": "File compression and decompression tool",
-      "category": "archive",
-      "fallbackSystemPath": "/system/bin/gzip",
-      "required": false
-    },
-    {
-      "name": "grep",
-      "description": "Pattern search tool",
-      "category": "text",
-      "fallbackSystemPath": "/system/bin/grep",
-      "required": false
-    },
-    {
-      "name": "sed",
-      "description": "Stream editor for filtering and transforming text",
-      "category": "text",
-      "fallbackSystemPath": "/system/bin/sed",
-      "required": false
-    },
-    {
-      "name": "awk",
-      "description": "Pattern scanning and processing language",
-      "category": "text",
-      "fallbackSystemPath": "/system/bin/awk",
-      "required": false
-    },
-    {
-      "name": "nano",
-      "description": "Lightweight terminal text editor",
-      "category": "editor",
-      "nativeLibName": "libnano.so",
-      "required": false
+      "id": "busybox-standard-delta",
+      "nativeLibName": "libbusybox_standard.so",
+      "dependsOn": [],
+      "sha256": {
+        "arm64-v8a": "26c36dd5ce0c30060ef9cebb3ae8706fdf572564db12981ed270dbe071272627",
+        "x86_64": "3df6a3e8cb2fa78150c5ee608957ce38016e00a3935e8edc1dca8d3f462f3a87",
+        "armeabi-v7a": "213f86ca144de2a01ab7f72cab8ed3a75f2f576a14ae2252a31a2f26512566f4"
+      }
     }
+  ],
+  "binaries": [
+    { "name": "grep",  "description": "Search text using patterns", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "sed",   "description": "Stream editor", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "awk",   "description": "Pattern scanning and text processing", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "find",  "description": "Search for files in a directory hierarchy", "category": "fs", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "du",    "description": "Estimate file space usage", "category": "fs", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "df",    "description": "Report filesystem disk space usage", "category": "fs", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "stat",  "description": "Display file or filesystem status", "category": "fs", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "tar",   "description": "Archive utility", "category": "archive", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "gzip",  "description": "Compress files", "category": "archive", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "unzip", "description": "Extract zip archives", "category": "archive", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "wget",  "description": "Retrieve files via HTTP/FTP", "category": "network", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "ping",  "description": "Send ICMP echo requests", "category": "network", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "less",  "description": "Page through text", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "head",  "description": "Output the first part of files", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "tail",  "description": "Output the last part of files", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "wc",    "description": "Print newline/word/byte counts", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "sort",  "description": "Sort lines of text", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "uniq",  "description": "Report or omit repeated lines", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "cut",   "description": "Remove sections from lines of files", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "diff",  "description": "Compare files line by line", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "xargs", "description": "Build and execute command lines from input", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
+    { "name": "tee",   "description": "Read from stdin, write to stdout and files", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false }
   ]
 }
