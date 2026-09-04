@@ -1,49 +1,39 @@
 {
   "tier": "base",
   "version": "1.0.0",
-  "description": "Base POSIX shell tools provided by Android system and core runtime",
-  "binaries": [
+  "source": {
+    "project": "BusyBox",
+    "license": "GPL-2.0-only",
+    "upstreamVersion": "1.36.1",
+    "mirrorUrl": "https://github.com/mirror/busybox",
+    "commit": "1a64f6a20aaf6ea4dbba68bbfa8cc1ab7e5c57c4"
+  },
+  "sharedBinaries": [
     {
-      "name": "sh",
-      "description": "POSIX command interpreter",
-      "category": "core",
-      "fallbackSystemPath": "/system/bin/sh",
-      "required": true
-    },
-    {
-      "name": "toybox",
-      "description": "All-in-one Linux command line utilities",
-      "category": "core",
-      "fallbackSystemPath": "/system/bin/toybox",
-      "required": false
-    },
-    {
-      "name": "toolbox",
-      "description": "Android system utility multiplexer",
-      "category": "core",
-      "fallbackSystemPath": "/system/bin/toolbox",
-      "required": false
-    },
-    {
-      "name": "ls",
-      "description": "List directory contents",
-      "category": "core",
-      "fallbackSystemPath": "/system/bin/ls",
-      "required": false
-    },
-    {
-      "name": "cat",
-      "description": "Concatenate and print files",
-      "category": "core",
-      "fallbackSystemPath": "/system/bin/cat",
-      "required": false
-    },
-    {
-      "name": "echo",
-      "description": "Display a line of text",
-      "category": "core",
-      "fallbackSystemPath": "/system/bin/echo",
-      "required": false
+      "id": "busybox",
+      "nativeLibName": "libbusybox.so",
+      "dependsOn": [],
+      "sha256": {
+        "arm64-v8a": "9b99db115c6788450471578b654f8ee8df0c1262dd4350e4263df653ed2927e4",
+        "x86_64": "6c5f9f827316c30d9694e9af83d8f7dcf2c230c3142c86080cf544acfae07f29",
+        "armeabi-v7a": "b0191a812b46c37b640a1a37b8c42f69ccc8c90388e7f873350a7f63dde324bd"
+      }
     }
+  ],
+  "binaries": [
+    { "name": "sh", "description": "POSIX command interpreter", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "ash", "description": "Almquist shell", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "ls", "description": "List directory contents", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "cp", "description": "Copy files", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "mv", "description": "Move/rename files", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "rm", "description": "Remove files", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "mkdir", "description": "Create directories", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "cat", "description": "Concatenate and print files", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "chmod", "description": "Change file permissions", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "ps", "description": "Report process status", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "kill", "description": "Send signals to processes", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "env", "description": "Print/run with modified environment", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "which", "description": "Locate a command", "category": "core", "sharedBinary": "busybox", "required": true },
+    { "name": "uname", "description": "Print system information", "category": "core", "sharedBinary": "busybox", "required": true }
   ]
 }
