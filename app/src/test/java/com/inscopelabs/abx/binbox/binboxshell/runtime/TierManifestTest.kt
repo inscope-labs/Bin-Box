@@ -6,12 +6,12 @@ import com.inscopelabs.abx.binbox.binboxshell.security.ShellSecurity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -23,10 +23,28 @@ class TierManifestTest {
         {
           "tier": "base",
           "version": "1.0.0",
-          "description": "Base POSIX shell tools",
+          "source": {
+            "project": "BusyBox",
+            "license": "GPL-2.0-only",
+            "upstreamVersion": "1.36.1",
+            "mirrorUrl": "https://github.com/mirror/busybox",
+            "commit": "1a64f6a20aaf6ea4dbba68bbfa8cc1ab7e5c57c4"
+          },
+          "sharedBinaries": [
+            {
+              "id": "busybox",
+              "nativeLibName": "libbusybox.so",
+              "dependsOn": [],
+              "sha256": {
+                "arm64-v8a": "9b99db115c6788450471578b654f8ee8df0c1262dd4350e4263df653ed2927e4",
+                "x86_64": "6c5f9f827316c30d9694e9af83d8f7dcf2c230c3142c86080cf544acfae07f29",
+                "armeabi-v7a": "b0191a812b46c37b640a1a37b8c42f69ccc8c90388e7f873350a7f63dde324bd"
+              }
+            }
+          ],
           "binaries": [
-            { "name": "sh", "description": "POSIX shell", "category": "core", "fallbackSystemPath": "/system/bin/sh", "required": true },
-            { "name": "ls", "description": "List dir", "category": "core", "fallbackSystemPath": "/system/bin/ls", "required": false }
+            { "name": "sh", "description": "POSIX shell", "category": "core", "sharedBinary": "busybox", "required": true },
+            { "name": "ls", "description": "List dir", "category": "core", "sharedBinary": "busybox", "required": false }
           ]
         }
         """.trimIndent()
@@ -38,21 +56,34 @@ class TierManifestTest {
         val manifest = registry.parseManifest(ShellTier.BASE, json)
         assertEquals(ShellTier.BASE, manifest.tier)
         assertEquals("1.0.0", manifest.version)
+        assertEquals("BusyBox", manifest.source?.project)
+        assertEquals("1.36.1", manifest.source?.upstreamVersion)
+        assertEquals(1, manifest.sharedBinaries.size)
+        assertEquals("libbusybox.so", manifest.sharedBinaries[0].nativeLibName)
+        assertEquals(3, manifest.sharedBinaries[0].sha256.size)
         assertEquals(2, manifest.binaries.size)
         assertEquals("sh", manifest.binaries[0].name)
         assertTrue(manifest.binaries[0].required)
-        assertEquals("/system/bin/sh", manifest.binaries[0].fallbackSystemPath)
+        assertEquals("busybox", manifest.binaries[0].sharedBinary)
+        assertFalse(manifest.binaries[1].required)
     }
 
     @Test
-    fun parseStandardAndExtendedManifest_handlesNativeLibNames() {
+    fun parseStandardManifest_handlesSharedBinaryReference() {
         val json = """
         {
           "tier": "standard",
           "version": "1.0.0",
-          "description": "Standard productivity shell tools",
+          "sharedBinaries": [
+            {
+              "id": "busybox-standard-delta",
+              "nativeLibName": "libbusybox_standard.so",
+              "dependsOn": [],
+              "sha256": { "arm64-v8a": "abc123" }
+            }
+          ],
           "binaries": [
-            { "name": "curl", "description": "Data transfer", "category": "network", "nativeLibName": "libcurl.so", "required": false }
+            { "name": "grep", "description": "Search text", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false }
           ]
         }
         """.trimIndent()
@@ -62,8 +93,22 @@ class TierManifestTest {
         val registry = BinaryRegistry(mockContext, runtimePaths)
 
         val manifest = registry.parseManifest(ShellTier.STANDARD, json)
-        assertEquals("libcurl.so", manifest.binaries[0].nativeLibName)
+        assertEquals("grep", manifest.binaries[0].name)
+        assertEquals("busybox-standard-delta", manifest.binaries[0].sharedBinary)
         assertFalse(manifest.binaries[0].required)
+        assertNull(manifest.source)
+    }
+
+    @Test
+    fun resolveBinaryPath_returnsNullWhenSharedBinaryMissing() {
+        val mockContext = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val runtimePaths = RuntimePaths(mockContext)
+        val registry = BinaryRegistry(mockContext, runtimePaths)
+
+        // No manifests loaded from real assets in this Robolectric context beyond
+        // whatever ships in app/src/main/assets, and no on-disk native lib will
+        // exist for a bogus name — resolution must fail closed, not throw.
+        assertEquals(null, registry.resolveBinaryPath("definitely-not-a-real-binary-xyz"))
     }
 
     @Test

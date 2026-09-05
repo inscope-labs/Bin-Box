@@ -82,7 +82,7 @@ fun LocalShellModulesSheet(
                             ShellTier.STANDARD -> "Standard Productivity Pack"
                             ShellTier.EXTENDED -> "Extended Developer Toolchain"
                         },
-                        description = manifest?.description ?: "",
+                        description = manifest?.source?.let { "${it.project} ${it.upstreamVersion}" } ?: "",
                         binaries = manifest?.binaries ?: emptyList(),
                         state = state,
                         onInstallClick = {
