@@ -1,0 +1,219 @@
+name: Build Bash (RTX-100 Standard Tier)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to push runlogs to native-runlogs
+
+env:
+  BASH_MIRROR_COMMIT: b8c60bc9ca365f8261fa97900b6fa939f6ebc303
+  BASH_TREE_SHA256: 674ddae6484ddf8d3311fc6bb02b5ee866e80ee2e24590f2a79a4bc2e5f6cd4a
+  NDK_VERSION: 27.3.13750724
+  MIN_SDK: 24
+
+jobs:
+  build:
+    name: Build (${{ matrix.abi }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            triple: aarch64-linux-android
+
+          - abi: x86_64
+            triple: x86_64-linux-android
+
+          - abi: armeabi-v7a
+            triple: armv7a-linux-androideabi
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Init runlog
+        run: |
+          echo "=== STAGE: init | $(date -u +%FT%TZ) | abi=${{ matrix.abi }} ===" > build.log
+
+      - name: Set up Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27d
+          add-to-path: false
+
+      - name: Verify NDK
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          {
+            echo "=== STAGE: verify-ndk | $(date -u +%FT%TZ) ==="
+            set -eux
+            test -n "$NDK_HOME"
+            test -d "$NDK_HOME"
+            TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+            test -x "$TOOLCHAIN/llvm-ar"
+            test -x "$TOOLCHAIN/llvm-strip"
+            test -x "$TOOLCHAIN/llvm-ranlib"
+            test -x "$TOOLCHAIN/llvm-nm"
+            "$TOOLCHAIN/clang" --version
+            echo "=== EXIT CODE: $? ==="
+          } 2>&1 | tee -a build.log
+
+      - name: Fetch and verify pinned Bash source
+        run: |
+          {
+            echo "=== STAGE: fetch-source | $(date -u +%FT%TZ) ==="
+            set -eux
+
+            curl -fL \
+              "https://codeload.github.com/tianon/mirror-bash/tar.gz/${BASH_MIRROR_COMMIT}" \
+              -o bash-src.tar.gz
+
+            rm -rf bash-src
+            mkdir -p bash-src
+            tar -xzf bash-src.tar.gz --strip-components=1 -C bash-src
+
+            # Tree-content hash, NOT tarball hash -- codeload.github.com is not
+            # guaranteed to produce byte-identical .tar.gz output across separate
+            # requests for the same commit (confirmed empirically Sept 5 2026).
+            # See native/bash/VERSION_PIN.md for the full finding. This method
+            # must match exactly: relative paths, hash field only, self-built
+            # separator -- so it's independent of directory naming and of
+            # whichever sha256sum implementation is on the runner.
+            ACTUAL_TREE_SHA256=$(
+              cd bash-src
+              find . -type f | sort | while IFS= read -r f; do
+                h=$(sha256sum "$f" | awk '{print $1}')
+                printf '%s  %s\n' "$h" "$f"
+              done | sha256sum | awk '{print $1}'
+            )
+
+            echo "expected: ${BASH_TREE_SHA256}"
+            echo "actual:   ${ACTUAL_TREE_SHA256}"
+
+            if [ "$ACTUAL_TREE_SHA256" != "$BASH_TREE_SHA256" ]; then
+              echo "ERROR: tree content hash mismatch"
+              exit 1
+            fi
+
+            echo "Tree content verified."
+            echo "=== EXIT CODE: $? ==="
+          } 2>&1 | tee -a build.log
+
+      - name: Install cross-build config cache
+        run: |
+          {
+            echo "=== STAGE: install-cache | $(date -u +%FT%TZ) ==="
+            set -eux
+            cp native/bash/cross-build/android.cache bash-src/cross-build/android.cache
+            test -f bash-src/cross-build/android.cache
+            echo "=== EXIT CODE: $? ==="
+          } 2>&1 | tee -a build.log
+
+      - name: Configure for ${{ matrix.abi }}
+        id: configure
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          {
+            echo "=== STAGE: configure | $(date -u +%FT%TZ) ==="
+            set -eux
+
+            TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+            CC="$TOOLCHAIN/${{ matrix.triple }}${MIN_SDK}-clang"
+            test -x "$CC"
+
+            cd bash-src
+
+            CC="$CC" \
+            AR="$TOOLCHAIN/llvm-ar" \
+            STRIP="$TOOLCHAIN/llvm-strip" \
+            RANLIB="$TOOLCHAIN/llvm-ranlib" \
+            NM="$TOOLCHAIN/llvm-nm" \
+            ./configure \
+              --host="${{ matrix.triple }}" \
+              --cache-file=cross-build/android.cache \
+              --without-bash-malloc \
+              --disable-nls \
+              --disable-rpath
+
+            echo "=== EXIT CODE: $? ==="
+          } 2>&1 | tee -a build.log
+
+      - name: Compile
+        id: compile
+        if: always() && steps.configure.outcome == 'success'
+        run: |
+          {
+            echo "=== STAGE: compile | $(date -u +%FT%TZ) ==="
+            set -eux
+            cd bash-src
+            make -j"$(nproc)"
+            echo "=== EXIT CODE: $? ==="
+          } 2>&1 | tee -a build.log
+
+      - name: Verify output binary
+        if: always() && steps.compile.outcome == 'success'
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          {
+            echo "=== STAGE: verify-binary | $(date -u +%FT%TZ) ==="
+            set -eux
+
+            TOOLCHAIN="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+            cd bash-src
+
+            test -f bash
+            file bash
+            file bash | grep -q "ELF" || {
+              echo "ERROR: bash is not an ELF binary"
+              exit 1
+            }
+
+            "$TOOLCHAIN/llvm-strip" -o bash-stripped bash
+            test -s bash-stripped
+            file bash-stripped
+
+            echo "=== EXIT CODE: $? ==="
+          } 2>&1 | tee -a build.log
+
+      - name: Upload ${{ matrix.abi }} binary
+        if: always() && steps.compile.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bash-standard-${{ matrix.abi }}
+          path: bash-src/bash-stripped
+          if-no-files-found: error
+
+      - name: Push runlog (always, even on failure)
+        if: always()
+        run: |
+          git fetch origin native-runlogs:native-runlogs 2>/dev/null || true
+          if git show-ref --verify --quiet refs/heads/native-runlogs; then
+            git checkout native-runlogs
+          else
+            git checkout --orphan native-runlogs
+            git rm -rf . > /dev/null 2>&1 || true
+          fi
+
+          mkdir -p "logs/standard/bash/${{ matrix.abi }}"
+          cp build.log "logs/standard/bash/${{ matrix.abi }}/${{ github.run_id }}_${{ github.run_attempt }}_$(date -u +%Y%m%dT%H%M%SZ).log"
+
+          git add "logs/standard/bash/${{ matrix.abi }}"
+          git -c user.name="ci" -c user.email="ci@inscope-labs.dev" \
+            commit -m "runlog: bash ${{ matrix.abi }} run ${{ github.run_id }} (attempt ${{ github.run_attempt }})"
+
+          for i in 1 2 3 4 5; do
+            git push origin native-runlogs && break
+            echo "push failed (concurrent job?), retrying after fetch+rebase ($i/5)"
+            git fetch origin native-runlogs
+            git rebase origin/native-runlogs
+            sleep $((i * 3))
+          done

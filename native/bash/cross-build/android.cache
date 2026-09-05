@@ -1,0 +1,32 @@
+# Config cache for cross-compiling Bash 5.3 for Android (Bionic libc) via the
+# NDK, targeting all 3 RTX-100 ABIs (aarch64/x86_64/armv7a). Follows the same
+# format as the other cross-build/*.cache files already shipped in this
+# source tree (cygwin32, msys32, opennt, qnx, x86-beos) -- see
+# native/bash/VERSION_PIN.md for provenance and scope notes.
+#
+# Values are adapted from termux-packages' packages/bash/build.sh (public,
+# GPL-licensed build recipe) as reference for known-correct Android/Bionic
+# cross-compile answers -- not a source of any binary artifact. Bash's own
+# cross-build/*.cache files are the template this follows; Termux's build.sh
+# is where the target-specific values below come from.
+
+# --- Bash-specific (bash_cv_*) ---
+bash_cv_job_control_missing=${bash_cv_job_control_missing=present}
+bash_cv_sys_siglist=${bash_cv_sys_siglist=yes}
+bash_cv_func_sigsetjmp=${bash_cv_func_sigsetjmp=present}
+bash_cv_unusable_rtsigs=${bash_cv_unusable_rtsigs=no}
+bash_cv_dev_fd=${bash_cv_dev_fd=whacky}
+bash_cv_getcwd_malloc=${bash_cv_getcwd_malloc=yes}
+
+# --- Generic autoconf (ac_cv_*) ---
+# Multibyte support intentionally NOT enabled for this build (would need
+# Bionic's missing iconv()), so ac_cv_func_mbsnrtowcs isn't load-bearing here,
+# but kept for parity with Termux's known-good answer in case a later delta
+# build re-enables --enable-multibyte.
+ac_cv_func_mbsnrtowcs=${ac_cv_func_mbsnrtowcs=no}
+
+# Bionic does not implement these; autoconf's own cross-compile defaults are
+# usually conservative enough not to require these explicitly, but pre-seed
+# to avoid a silent wrong-default if bash's configure.ac changes behavior:
+ac_cv_func_getpagesize=${ac_cv_func_getpagesize=yes}
+ac_cv_func_mmap_fixed_mapped=${ac_cv_func_mmap_fixed_mapped=yes}
