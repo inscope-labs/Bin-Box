@@ -25,6 +25,18 @@ bash_cv_getcwd_malloc=${bash_cv_getcwd_malloc=yes}
 # build re-enables --enable-multibyte.
 ac_cv_func_mbsnrtowcs=${ac_cv_func_mbsnrtowcs=no}
 
+# setgrent/getgrent/endgrent: added to Bionic at API 26; our MIN_SDK is 24.
+# Without these set to 'no', configure probes them as present (they ARE in the
+# NDK sysroot at higher API levels) and bash emits calls to them in bashline.c,
+# which clang then rejects as implicit-function-declarations (treated as errors
+# since NDK r27 enforces C99). Setting no causes bash to gate that tab-
+# completion group-lookup code out via existing #ifdef HAVE_SETGRENT guards.
+# Confirmed as the root cause of the first CI attempt's compile failure (run
+# 33964930601, all 3 ABIs, same error, Sept 5 2026).
+ac_cv_func_setgrent=${ac_cv_func_setgrent=no}
+ac_cv_func_getgrent=${ac_cv_func_getgrent=no}
+ac_cv_func_endgrent=${ac_cv_func_endgrent=no}
+
 # Bionic does not implement these; autoconf's own cross-compile defaults are
 # usually conservative enough not to require these explicitly, but pre-seed
 # to avoid a silent wrong-default if bash's configure.ac changes behavior:
