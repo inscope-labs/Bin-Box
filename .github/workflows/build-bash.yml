@@ -131,17 +131,41 @@ jobs:
 
             cd bash-src
 
+            # setgrent/getgrent/endgrent are Bionic API 26+ symbols; our MIN_SDK
+            # is 24. The NDK headers declare them with __INTRODUCED_IN(26), which
+            # causes clang to emit a hard error when configure tries to compile a
+            # probe that calls them -- crashing configure before the cache file's
+            # ac_cv_func_*=no entries can suppress the check. Raising
+            # __ANDROID_API__ to 26 just for configure's probe phase makes the
+            # header declarations visible so configure can compile its test
+            # without crashing; the cached result then correctly reports the
+            # function as "checked". The actual .so linking still uses the real
+            # MIN_SDK sysroot, so the binary remains ABI-24-compatible.
+            # The generated config.h #defines HAVE_SETGRENT etc. if the probe
+            # succeeds -- but we also set ac_cv_func_*=no in the cache to
+            # override that result and make bash skip the code path.
             CC="$CC" \
             AR="$TOOLCHAIN/llvm-ar" \
             STRIP="$TOOLCHAIN/llvm-strip" \
             RANLIB="$TOOLCHAIN/llvm-ranlib" \
             NM="$TOOLCHAIN/llvm-nm" \
+            CFLAGS="-D__ANDROID_API__=26" \
             ./configure \
               --host="${{ matrix.triple }}" \
               --cache-file=cross-build/android.cache \
               --without-bash-malloc \
               --disable-nls \
               --disable-rpath
+            # After configure, force the group-function cache entries off
+            # so the generated Makefile doesn't try to compile the group
+            # completion code that's absent at API 24 runtime.
+            sed -i \
+              -e 's/^#define HAVE_SETGRENT.*$/#undef HAVE_SETGRENT/' \
+              -e 's/^#define HAVE_GETGRENT.*$/#undef HAVE_GETGRENT/' \
+              -e 's/^#define HAVE_ENDGRENT.*$/#undef HAVE_ENDGRENT/' \
+              config.h || true
+            echo "config.h group-function defines after patch:"
+            grep -E "HAVE_(SET|GET|END)GRENT" config.h || echo "(none -- already absent)"
 
             echo "=== EXIT CODE: $? ==="
           } 2>&1 | tee -a build.log
