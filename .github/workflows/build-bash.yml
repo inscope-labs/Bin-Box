@@ -156,16 +156,18 @@ jobs:
               --without-bash-malloc \
               --disable-nls \
               --disable-rpath
-            # After configure, force the group-function cache entries off
-            # so the generated Makefile doesn't try to compile the group
-            # completion code that's absent at API 24 runtime.
+            # After configure, undefine HAVE_GRP_H so bash's group-name
+            # completion function (bashline.c ~2726) takes the early-return
+            # branch: its guard is !defined(HAVE_GRP_H), NOT HAVE_SETGRENT.
+            # grp.h is present in the NDK sysroot (configure sees it), but
+            # setgrent/getgrent/endgrent inside it are __INTRODUCED_IN(26)
+            # and not callable at MIN_SDK=24. Removing HAVE_GRP_H makes bash
+            # treat this like a non-POSIX target and skip that completion path.
             sed -i \
-              -e 's/^#define HAVE_SETGRENT.*$/#undef HAVE_SETGRENT/' \
-              -e 's/^#define HAVE_GETGRENT.*$/#undef HAVE_GETGRENT/' \
-              -e 's/^#define HAVE_ENDGRENT.*$/#undef HAVE_ENDGRENT/' \
+              -e 's/^#define HAVE_GRP_H.*$/#undef HAVE_GRP_H/' \
               config.h || true
-            echo "config.h group-function defines after patch:"
-            grep -E "HAVE_(SET|GET|END)GRENT" config.h || echo "(none -- already absent)"
+            echo "config.h HAVE_GRP_H after patch:"
+            grep "HAVE_GRP_H" config.h || echo "(not defined -- correct)"
 
             echo "=== EXIT CODE: $? ==="
           } 2>&1 | tee -a build.log
