@@ -20,8 +20,8 @@ class TierModuleCardTest {
     @Test
     fun tierModuleCard_displaysTitleAndBinaries() {
         val binaries = listOf(
-            BinaryDescriptor(name = "curl", description = "Data transfer", category = "network"),
-            BinaryDescriptor(name = "tar", description = "Archive tool", category = "archive")
+            BinaryDescriptor(name = "curl", description = "Data transfer", category = "network", sharedBinary = "test-shared"),
+            BinaryDescriptor(name = "tar", description = "Archive tool", category = "archive", sharedBinary = "test-shared")
         )
 
         composeTestRule.setContent {
@@ -43,7 +43,7 @@ class TierModuleCardTest {
     @Test
     fun tierModuleCard_displaysReady_whenInstalled() {
         val binaries = listOf(
-            BinaryDescriptor(name = "sh", description = "POSIX Shell", category = "core")
+            BinaryDescriptor(name = "sh", description = "POSIX Shell", category = "core", sharedBinary = "test-shared")
         )
 
         composeTestRule.setContent {
