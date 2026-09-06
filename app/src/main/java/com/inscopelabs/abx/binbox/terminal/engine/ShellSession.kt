@@ -50,6 +50,7 @@ interface ShellSession {
     val bytesSent: StateFlow<Long> get() = kotlinx.coroutines.flow.MutableStateFlow(0L)
     val isBracketedPasteMode: Boolean get() = false
     val hasPendingLine: Boolean get() = false
+    val isAlternateScreenActive: Boolean get() = false
     var isScreenOutputMuted: Boolean
         get() = false
         set(_) {}
@@ -100,6 +101,9 @@ open class TransportShellSession(
 
     override val hasPendingLine: Boolean
         get() = ansiParser.hasPendingLine()
+
+    override val isAlternateScreenActive: Boolean
+        get() = ansiParser.isAlternateBufferActive
 
     @Volatile
     override var isScreenOutputMuted: Boolean = false
@@ -166,6 +170,8 @@ open class TransportShellSession(
     }
 
     override fun resize(cols: Int, rows: Int, widthPx: Int, heightPx: Int) {
+        ansiParser.updateSize(rows, cols)
+        _lines.value = ansiParser.getLines()
         transport.resize(cols, rows, widthPx, heightPx)
     }
 

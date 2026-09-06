@@ -67,7 +67,7 @@ fun TerminalScreen(
     fun recordShadowIfComplete(shadow: String): String {
         if (shadow.isNotBlank()) {
             val session = activeSession
-            if (session != null) {
+            if (session != null && !session.isAlternateScreenActive) {
                 scope.launch {
                     viewModel.historyUseCases.recordHistory(shadow, session.hostLabel)
                 }

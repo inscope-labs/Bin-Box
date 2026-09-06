@@ -148,6 +148,55 @@ fun TerminalBufferView(
                     modifier = Modifier.fillMaxWidth(0.95f)
                 )
             }
+        } else if (activeSession.isAlternateScreenActive) {
+            // A full-screen program (vim/htop/less/tmux) owns the whole
+            // viewport now — every grid row renders uniformly. There is no
+            // single "live" line to special-case here the way canonical shell
+            // mode has one: the program's own cursor can be anywhere on
+            // screen, not just the last row, so the previous prompt-row
+            // treatment (cursor + capture field anchored to the last item)
+            // would be actively wrong in this mode.
+            //
+            // Keystrokes still need to reach the shell, so an invisible
+            // capture field is kept alive via an overlay. A visible cursor
+            // indicator anchored to the program's true on-screen position
+            // (alternateGrid.cursorRow/cursorCol) is a deliberate follow-up,
+            // not attempted here — it needs per-row layout offsets this
+            // LazyColumn doesn't currently expose.
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("terminal_lines_list")
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            inputFocusRequester.requestFocus()
+                        },
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    items(sessionLines) { line ->
+                        Text(
+                            text = renderLineAnnotatedString(line, currentTheme, searchQuery),
+                            fontSize = fontSizeSp.sp,
+                            fontFamily = FontFamily.Monospace,
+                            lineHeight = (fontSizeSp + 5).sp,
+                            softWrap = false,
+                            maxLines = 1
+                        )
+                    }
+                }
+                RawInputCaptureField(
+                    focusRequester = inputFocusRequester,
+                    onInsert = onRawInsert,
+                    onBackspace = onBackspace,
+                    onEnter = onEnter,
+                    onArrowUp = onArrowUp,
+                    onArrowDown = onArrowDown
+                )
+            }
         } else {
             // The last line is either mid-write (hasPendingLine) or the shell's
             // freshly-reprinted prompt — either way it's the one line that's still

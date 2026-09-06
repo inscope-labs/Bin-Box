@@ -15,13 +15,15 @@ interface AnsiCsiTarget {
     val currentBuffer: MutableList<TerminalLine>
     val currentLineSegments: MutableList<StyledSegment>
     val currentSegmentBuilder: java.lang.StringBuilder
-    val alternateBuffer: MutableList<TerminalLine>
+    val alternateGrid: TerminalGrid
     var savedCursorRow: Int
     var savedCursorCol: Int
     var savedStyle: TerminalStyle
     val theme: TerminalThemePreset
 
     fun flushCurrentSegment()
+    fun enterAlternateBuffer()
+    fun exitAlternateBuffer()
 }
 
 class AnsiCsiHandler {
@@ -37,40 +39,48 @@ class AnsiCsiHandler {
                     target.currentStyle = AnsiSgrParser.parse(paramsStr, target.currentStyle, target.theme)
                 }
                 'J' -> {
-                    target.flushCurrentSegment()
-                    when (paramsStr) {
-                        "2", "3" -> {
-                            target.currentBuffer.clear()
-                            target.currentLineSegments.clear()
-                            target.currentSegmentBuilder.clear()
-                            target.cursorRow = 0
-                            target.cursorCol = 0
-                        }
-                        "1" -> {
-                            target.currentSegmentBuilder.clear()
-                            target.currentLineSegments.clear()
-                        }
-                        "0", "" -> {
-                            target.currentSegmentBuilder.clear()
+                    if (target.isAlternateBufferActive) {
+                        target.alternateGrid.eraseInDisplay(paramsStr.toIntOrNull() ?: 0)
+                    } else {
+                        target.flushCurrentSegment()
+                        when (paramsStr) {
+                            "2", "3" -> {
+                                target.currentBuffer.clear()
+                                target.currentLineSegments.clear()
+                                target.currentSegmentBuilder.clear()
+                                target.cursorRow = 0
+                                target.cursorCol = 0
+                            }
+                            "1" -> {
+                                target.currentSegmentBuilder.clear()
+                                target.currentLineSegments.clear()
+                            }
+                            "0", "" -> {
+                                target.currentSegmentBuilder.clear()
+                            }
                         }
                     }
                 }
                 'K' -> {
-                    when (paramsStr) {
-                        "2" -> {
-                            target.currentSegmentBuilder.clear()
-                            target.currentLineSegments.clear()
-                            target.cursorCol = 0
-                        }
-                        "1" -> {
-                            if (target.cursorCol >= target.currentSegmentBuilder.length) {
+                    if (target.isAlternateBufferActive) {
+                        target.alternateGrid.eraseInLine(paramsStr.toIntOrNull() ?: 0)
+                    } else {
+                        when (paramsStr) {
+                            "2" -> {
                                 target.currentSegmentBuilder.clear()
                                 target.currentLineSegments.clear()
+                                target.cursorCol = 0
                             }
-                        }
-                        "0", "" -> {
-                            if (target.cursorCol < target.currentSegmentBuilder.length) {
-                                target.currentSegmentBuilder.setLength(target.cursorCol)
+                            "1" -> {
+                                if (target.cursorCol >= target.currentSegmentBuilder.length) {
+                                    target.currentSegmentBuilder.clear()
+                                    target.currentLineSegments.clear()
+                                }
+                            }
+                            "0", "" -> {
+                                if (target.cursorCol < target.currentSegmentBuilder.length) {
+                                    target.currentSegmentBuilder.setLength(target.cursorCol)
+                                }
                             }
                         }
                     }
@@ -104,16 +114,35 @@ class AnsiCsiHandler {
                         when (mode) {
                             25 -> target.isCursorVisible = isEnable
                             47, 1049 -> {
-                                if (isEnable && !target.isAlternateBufferActive) {
-                                    target.isAlternateBufferActive = true
-                                    target.alternateBuffer.clear()
-                                } else if (!isEnable && target.isAlternateBufferActive) {
-                                    target.isAlternateBufferActive = false
-                                    target.alternateBuffer.clear()
-                                }
+                                if (isEnable) target.enterAlternateBuffer() else target.exitAlternateBuffer()
                             }
                             2004 -> target.isBracketedPasteMode = isEnable
                         }
+                    }
+                }
+                'r' -> {
+                    // DECSTBM — set scroll region. Only meaningful for the
+                    // alternate/full-screen buffer (e.g. a status line split);
+                    // scrollback mode has no fixed viewport to region within.
+                    if (target.isAlternateBufferActive) {
+                        val parts = paramsStr.split(';').mapNotNull { it.toIntOrNull() }
+                        if (parts.size >= 2) {
+                            target.alternateGrid.setScrollRegion(parts[0] - 1, parts[1] - 1)
+                        } else {
+                            target.alternateGrid.resetScrollRegion()
+                        }
+                        // DECSTBM moves the cursor to the origin, standard behavior.
+                        target.alternateGrid.setCursor(0, 0)
+                    }
+                }
+                'S' -> {
+                    if (target.isAlternateBufferActive) {
+                        target.alternateGrid.scrollUp(paramsStr.toIntOrNull() ?: 1)
+                    }
+                }
+                'T' -> {
+                    if (target.isAlternateBufferActive) {
+                        target.alternateGrid.scrollDown(paramsStr.toIntOrNull() ?: 1)
                     }
                 }
                 's' -> {

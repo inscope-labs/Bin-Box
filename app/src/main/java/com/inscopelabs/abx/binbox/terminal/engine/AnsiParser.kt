@@ -9,21 +9,53 @@ class AnsiParser(
 ) : AnsiCsiTarget {
     override var currentStyle = TerminalStyle()
     
-    // Primary buffer
+    // Primary buffer: an append-only scrollback list. This is deliberately
+    // NOT a fixed grid — canonical shell interaction (growing history of
+    // completed lines + a live prompt line) is a genuinely different, and
+    // already-correct, rendering shape for a mobile terminal.
     private val primaryBuffer = mutableListOf<TerminalLine>()
-    // Alternate screen buffer (e.g. for vim, htop, nano)
-    override val alternateBuffer = mutableListOf<TerminalLine>()
+
+    // Alternate screen buffer (vim, htop, nano, less, tmux, ...): a real
+    // fixed-size, cursor-addressable grid. Full-screen programs depend on
+    // moving the cursor to an arbitrary position and overwriting whatever
+    // is already there — a scrollback list cannot represent that.
+    override val alternateGrid = TerminalGrid(rows = defaultRows, cols = defaultCols)
     override var isAlternateBufferActive = false
 
     override val currentBuffer: MutableList<TerminalLine>
-        get() = if (isAlternateBufferActive) alternateBuffer else primaryBuffer
+        get() = primaryBuffer
 
     override val currentLineSegments = mutableListOf<StyledSegment>()
     override val currentSegmentBuilder = StringBuilder()
 
-    // Cursor position & visibility
-    override var cursorRow: Int = 0
-    override var cursorCol: Int = 0
+    // Cursor position & visibility. Exposed as proxying properties: when the
+    // alternate buffer is active, get/set transparently target its grid's
+    // cursor instead of the primary buffer's own tracked position. This means
+    // AnsiCsiHandler's existing cursor-movement code (CSI H/f/A/B/C/D) needs
+    // no changes at all to work correctly against whichever buffer is live.
+    private var primaryCursorRow: Int = 0
+    private var primaryCursorCol: Int = 0
+
+    override var cursorRow: Int
+        get() = if (isAlternateBufferActive) alternateGrid.cursorRow else primaryCursorRow
+        set(value) {
+            if (isAlternateBufferActive) {
+                alternateGrid.setCursor(value, alternateGrid.cursorCol)
+            } else {
+                primaryCursorRow = value
+            }
+        }
+
+    override var cursorCol: Int
+        get() = if (isAlternateBufferActive) alternateGrid.cursorCol else primaryCursorCol
+        set(value) {
+            if (isAlternateBufferActive) {
+                alternateGrid.setCursor(alternateGrid.cursorRow, value)
+            } else {
+                primaryCursorCol = value
+            }
+        }
+
     override var isCursorVisible: Boolean = true
     override var isBracketedPasteMode: Boolean = false
 
@@ -34,13 +66,51 @@ class AnsiParser(
 
     var maxScrollback: Int = 3000
 
+    private var rows: Int = defaultRows
+    private var cols: Int = defaultCols
+
+    companion object {
+        private const val defaultRows = 24
+        private const val defaultCols = 80
+    }
+
+    /** Called when the UI measures/changes the terminal viewport, so the
+     * alternate-buffer grid (and eventually the PTY window size) reflect the
+     * real dimensions full-screen programs need to lay themselves out. */
+    @Synchronized
+    fun updateSize(newRows: Int, newCols: Int) {
+        rows = newRows.coerceAtLeast(1)
+        cols = newCols.coerceAtLeast(1)
+        alternateGrid.resize(rows, cols)
+    }
+
+    override fun enterAlternateBuffer() {
+        if (!isAlternateBufferActive) {
+            isAlternateBufferActive = true
+            alternateGrid.clear()
+            alternateGrid.resetScrollRegion()
+        }
+    }
+
+    override fun exitAlternateBuffer() {
+        if (isAlternateBufferActive) {
+            isAlternateBufferActive = false
+            // Discard alt-screen content on exit — standard xterm behavior;
+            // the primary buffer's scrollback is untouched throughout.
+            alternateGrid.clear()
+        }
+    }
+
     fun updateTheme(newTheme: TerminalThemePreset) {
         this.theme = newTheme
     }
 
     @Synchronized
     fun getLines(): List<TerminalLine> {
-        val activeBuf = currentBuffer
+        if (isAlternateBufferActive) {
+            return alternateGrid.toTerminalLines()
+        }
+        val activeBuf = primaryBuffer
         val result = ArrayList<TerminalLine>(activeBuf.size + 1)
         result.addAll(activeBuf)
         if (currentSegmentBuilder.isNotEmpty() || currentLineSegments.isNotEmpty()) {
@@ -55,18 +125,21 @@ class AnsiParser(
 
     @Synchronized
     fun hasPendingLine(): Boolean {
+        // The alternate grid always renders as a complete, fixed viewport —
+        // there is no "line still being written" concept in that mode.
+        if (isAlternateBufferActive) return false
         return currentSegmentBuilder.isNotEmpty() || currentLineSegments.isNotEmpty()
     }
 
     @Synchronized
     fun clear() {
         primaryBuffer.clear()
-        alternateBuffer.clear()
+        alternateGrid.clear()
         currentLineSegments.clear()
         currentSegmentBuilder.clear()
         currentStyle = TerminalStyle()
-        cursorRow = 0
-        cursorCol = 0
+        primaryCursorRow = 0
+        primaryCursorCol = 0
     }
 
     @Synchronized
@@ -133,7 +206,10 @@ class AnsiParser(
 
                 // Carriage Return (\r)
                 ch == '\r' -> {
-                    if (i + 1 < len && input[i + 1] == '\n') {
+                    if (isAlternateBufferActive) {
+                        alternateGrid.carriageReturn()
+                        i++
+                    } else if (i + 1 < len && input[i + 1] == '\n') {
                         flushCurrentSegment()
                         commitCurrentLine()
                         i += 2
@@ -148,14 +224,20 @@ class AnsiParser(
 
                 // Newline (\n)
                 ch == '\n' -> {
-                    flushCurrentSegment()
-                    commitCurrentLine()
+                    if (isAlternateBufferActive) {
+                        alternateGrid.lineFeed()
+                    } else {
+                        flushCurrentSegment()
+                        commitCurrentLine()
+                    }
                     i++
                 }
 
                 // Backspace (\b)
                 ch == '\b' -> {
-                    if (currentSegmentBuilder.isNotEmpty()) {
+                    if (isAlternateBufferActive) {
+                        alternateGrid.backspace()
+                    } else if (currentSegmentBuilder.isNotEmpty()) {
                         currentSegmentBuilder.deleteCharAt(currentSegmentBuilder.length - 1)
                         if (cursorCol > 0) cursorCol--
                     } else if (currentLineSegments.isNotEmpty()) {
@@ -172,9 +254,13 @@ class AnsiParser(
 
                 // Tab (\t)
                 ch == '\t' -> {
-                    val tabSpaces = 4 - (cursorCol % 4)
-                    currentSegmentBuilder.append(" ".repeat(tabSpaces.coerceAtLeast(1)))
-                    cursorCol += tabSpaces
+                    val tabSpaces = (4 - (cursorCol % 4)).coerceAtLeast(1)
+                    if (isAlternateBufferActive) {
+                        repeat(tabSpaces) { alternateGrid.writeChar(' ', currentStyle) }
+                    } else {
+                        currentSegmentBuilder.append(" ".repeat(tabSpaces))
+                        cursorCol += tabSpaces
+                    }
                     i++
                 }
 
@@ -239,8 +325,12 @@ class AnsiParser(
                 }
 
                 else -> {
-                    currentSegmentBuilder.append(ch)
-                    cursorCol++
+                    if (isAlternateBufferActive) {
+                        alternateGrid.writeChar(ch, currentStyle)
+                    } else {
+                        currentSegmentBuilder.append(ch)
+                        cursorCol++
+                    }
                     i++
                 }
             }
