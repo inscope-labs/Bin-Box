@@ -10,7 +10,7 @@ env:
   BASH_MIRROR_COMMIT: b8c60bc9ca365f8261fa97900b6fa939f6ebc303
   BASH_TREE_SHA256: 674ddae6484ddf8d3311fc6bb02b5ee866e80ee2e24590f2a79a4bc2e5f6cd4a
   NDK_VERSION: 27.3.13750724
-  MIN_SDK: 24
+  MIN_SDK: 28
 
 jobs:
   build:
@@ -131,25 +131,17 @@ jobs:
 
             cd bash-src
 
-            # setgrent/getgrent/endgrent are Bionic API 26+ symbols; our MIN_SDK
-            # is 24. The NDK headers declare them with __INTRODUCED_IN(26), which
-            # causes clang to emit a hard error when configure tries to compile a
-            # probe that calls them -- crashing configure before the cache file's
-            # ac_cv_func_*=no entries can suppress the check. Raising
-            # __ANDROID_API__ to 26 just for configure's probe phase makes the
-            # header declarations visible so configure can compile its test
-            # without crashing; the cached result then correctly reports the
-            # function as "checked". The actual .so linking still uses the real
-            # MIN_SDK sysroot, so the binary remains ABI-24-compatible.
-            # The generated config.h #defines HAVE_SETGRENT etc. if the probe
-            # succeeds -- but we also set ac_cv_func_*=no in the cache to
-            # override that result and make bash skip the code path.
+            # CFLAGS=-D__ANDROID_API__=28 matches MIN_SDK so configure's own
+            # probe compilations use the same API level as the real build.
+            # Previously MIN_SDK was 24, which caused clang to hard-error on
+            # __INTRODUCED_IN(26+) functions during configure's test phase.
+            # Raising to 28 resolves that entire class of issue.
             CC="$CC" \
             AR="$TOOLCHAIN/llvm-ar" \
             STRIP="$TOOLCHAIN/llvm-strip" \
             RANLIB="$TOOLCHAIN/llvm-ranlib" \
             NM="$TOOLCHAIN/llvm-nm" \
-            CFLAGS="-D__ANDROID_API__=26" \
+            CFLAGS="-D__ANDROID_API__=28" \
             ./configure \
               --host="${{ matrix.triple }}" \
               --cache-file=cross-build/android.cache \
@@ -159,10 +151,9 @@ jobs:
             # After configure, undefine HAVE_GRP_H so bash's group-name
             # completion function (bashline.c ~2726) takes the early-return
             # branch: its guard is !defined(HAVE_GRP_H), NOT HAVE_SETGRENT.
-            # grp.h is present in the NDK sysroot (configure sees it), but
-            # setgrent/getgrent/endgrent inside it are __INTRODUCED_IN(26)
-            # and not callable at MIN_SDK=24. Removing HAVE_GRP_H makes bash
-            # treat this like a non-POSIX target and skip that completion path.
+            # grp.h is present in the NDK sysroot and all its functions are
+            # available at API 28, but we don't need group-name tab-completion
+            # in RTX-100's embedded shell context.
             sed -i \
               -e 's/^#define HAVE_GRP_H.*$/#undef HAVE_GRP_H/' \
               config.h || true
