@@ -227,10 +227,14 @@ jobs:
           git -c user.name="ci" -c user.email="ci@inscope-labs.dev" \
             commit -m "runlog: bash ${{ matrix.abi }} run ${{ github.run_id }} (attempt ${{ github.run_attempt }})"
 
+          # Stagger the 3 concurrent matrix jobs by ABI to reduce collision rate,
+          # then retry with fetch+rebase on failure (handles any remaining races).
+          ABI_STAGGER=$(echo "${{ matrix.abi }}" | cksum | awk '{print $1 % 12}')
+          sleep "$ABI_STAGGER"
           for i in 1 2 3 4 5; do
             git push origin native-runlogs && break
             echo "push failed (concurrent job?), retrying after fetch+rebase ($i/5)"
             git fetch origin native-runlogs
             git rebase origin/native-runlogs
-            sleep $((i * 3))
+            sleep $((i * 5))
           done
