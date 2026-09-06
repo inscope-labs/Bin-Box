@@ -2,11 +2,11 @@
   "tier": "standard",
   "version": "1.0.0",
   "source": {
-    "project": "BusyBox",
-    "license": "GPL-2.0-only",
-    "upstreamVersion": "1.36.1",
-    "mirrorUrl": "https://github.com/mirror/busybox",
-    "commit": "1a64f6a20aaf6ea4dbba68bbfa8cc1ab7e5c57c4"
+    "project": "BusyBox + GNU Bash",
+    "license": "GPL-2.0-only / GPL-3.0-or-later",
+    "upstreamVersion": "BusyBox 1.36.1 / Bash 5.3",
+    "mirrorUrl": "https://github.com/mirror/busybox / https://github.com/tianon/mirror-bash",
+    "commit": "1a64f6a20aaf6ea4dbba68bbfa8cc1ab7e5c57c4 / b8c60bc9ca365f8261fa97900b6fa939f6ebc303"
   },
   "sharedBinaries": [
     {
@@ -18,9 +18,20 @@
         "x86_64": "3df6a3e8cb2fa78150c5ee608957ce38016e00a3935e8edc1dca8d3f462f3a87",
         "armeabi-v7a": "213f86ca144de2a01ab7f72cab8ed3a75f2f576a14ae2252a31a2f26512566f4"
       }
+    },
+    {
+      "id": "bash",
+      "nativeLibName": "libbash.so",
+      "dependsOn": [],
+      "sha256": {
+        "arm64-v8a": "513b9f2eec5b4dfd12d969ed8f57b326056b4c853599f61c8793de5568255309",
+        "x86_64": "0c7839f53fb94bff917752423a13cb1aa2dd51cc6fbf3d8a614861fb0e52f276",
+        "armeabi-v7a": "6850651f79c3afd55655a1efdb0816679c9522153fdaafaaffa6794f583b3ca5"
+      }
     }
   ],
   "binaries": [
+    { "name": "bash",  "description": "GNU Bourne Again Shell", "category": "shell", "sharedBinary": "bash", "required": false },
     { "name": "grep",  "description": "Search text using patterns", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
     { "name": "sed",   "description": "Stream editor", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
     { "name": "awk",   "description": "Pattern scanning and text processing", "category": "text", "sharedBinary": "busybox-standard-delta", "required": false },
