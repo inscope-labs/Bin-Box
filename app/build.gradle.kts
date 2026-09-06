@@ -43,7 +43,7 @@ android {
 
   defaultConfig {
     applicationId = "com.inscopelabs.abx.binbox"
-    minSdk = 24
+    minSdk = 28
     targetSdk = 36
     versionCode = resolvedVersionCode
     versionName = resolvedVersionName
