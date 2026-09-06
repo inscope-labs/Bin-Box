@@ -22,6 +22,7 @@ import com.inscopelabs.abx.binbox.ui.theme.*
 import com.inscopelabs.abx.binbox.ui.viewmodel.AppTab
 import com.inscopelabs.abx.binbox.ui.viewmodel.BinBoxViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,44 +50,65 @@ fun TerminalScreen(
     val renameDialogSessionIndex by viewModel.renameDialogSessionIndex.collectAsStateWithLifecycle()
     val isSessionSwitcherOpen by viewModel.isSessionSwitcherOpen.collectAsStateWithLifecycle()
     val isWorkspaceDialogOpen by viewModel.isWorkspaceDialogOpen.collectAsStateWithLifecycle()
-    val history by viewModel.history.collectAsStateWithLifecycle()
 
-    var inputText by remember { mutableStateOf("") }
-    var historyIndex by remember { mutableIntStateOf(-1) }
-    var uncommittedInput by remember { mutableStateOf("") }
     val inputFocusRequester = remember { FocusRequester() }
     var showPackagesSheet by remember { mutableStateOf(false) }
     var isFileTransferOpen by remember { mutableStateOf(false) }
     val ociLauncher = LocalOciWizardLauncher.current
 
-    val onHistoryUp: () -> Unit = {
-        if (history.isNotEmpty()) {
-            if (historyIndex == -1) {
-                uncommittedInput = inputText
-                historyIndex = 0
-                inputText = history[0].command
-            } else if (historyIndex < history.lastIndex) {
-                historyIndex++
-                inputText = history[historyIndex].command
+    // Shadow of the current line, kept ONLY so BinBox's own history browser
+    // (a separate app feature, not the live terminal) has something to record.
+    // It plays no part in what's displayed or what's sent to the shell — every
+    // byte is already forwarded immediately as it's typed. History recall
+    // in the terminal itself (up/down arrows) is the shell's own readline,
+    // same as any other terminal — see sendRaw/sendBackspace/sendEnter below.
+    var typedLineShadow by remember { mutableStateOf("") }
+
+    fun recordShadowIfComplete(shadow: String): String {
+        if (shadow.isNotBlank()) {
+            val session = activeSession
+            if (session != null) {
+                scope.launch {
+                    viewModel.historyUseCases.recordHistory(shadow, session.hostLabel)
+                }
             }
-        } else {
-            viewModel.sendSpecialKey(TerminalKey.ARROW_UP)
+        }
+        return ""
+    }
+
+    val sendRaw: (String) -> Unit = { text ->
+        viewModel.sendRawInput(text)
+        // A paste can contain embedded newlines (each line executes in turn,
+        // same as any terminal); split so each completed line still gets
+        // recorded into BinBox's own history browser.
+        var shadow = typedLineShadow
+        var remaining = text
+        while (true) {
+            val breakIndex = remaining.indexOfFirst { it == '\n' || it == '\r' }
+            if (breakIndex == -1) {
+                shadow += remaining
+                break
+            }
+            shadow = recordShadowIfComplete(shadow + remaining.substring(0, breakIndex))
+            remaining = remaining.substring(breakIndex + 1)
+        }
+        typedLineShadow = shadow
+    }
+
+    val sendBackspace: () -> Unit = {
+        viewModel.sendRawInput("\u007F")
+        if (typedLineShadow.isNotEmpty()) {
+            typedLineShadow = typedLineShadow.dropLast(1)
         }
     }
 
-    val onHistoryDown: () -> Unit = {
-        if (history.isNotEmpty()) {
-            if (historyIndex > 0) {
-                historyIndex--
-                inputText = history[historyIndex].command
-            } else if (historyIndex == 0) {
-                historyIndex = -1
-                inputText = uncommittedInput
-            }
-        } else {
-            viewModel.sendSpecialKey(TerminalKey.ARROW_DOWN)
-        }
+    val sendEnter: () -> Unit = {
+        viewModel.sendRawInput("\r")
+        typedLineShadow = recordShadowIfComplete(typedLineShadow)
     }
+
+    val sendArrowUp: () -> Unit = { viewModel.sendSpecialKey(TerminalKey.ARROW_UP) }
+    val sendArrowDown: () -> Unit = { viewModel.sendSpecialKey(TerminalKey.ARROW_DOWN) }
 
     if (showPackagesSheet) {
         LocalShellModulesSheet(onDismiss = { showPackagesSheet = false })
@@ -98,16 +120,26 @@ fun TerminalScreen(
 
     val listState = rememberLazyListState()
 
-    // Auto-scroll to bottom on new output or prompt input changes
-    LaunchedEffect(sessionLines.size, inputText) {
+    // Auto-scroll to bottom on new output. sessionLines already reflects every
+    // keystroke (the PTY echoes it back through the real parser), so this no
+    // longer needs a separate client input value as a trigger.
+    LaunchedEffect(sessionLines) {
         if (sessionLines.isNotEmpty()) {
             listState.animateScrollToItem(sessionLines.size)
         }
     }
 
-    // Cursor Blink Animation
+    // Cursor blink: only BLINKING_BLOCK actually blinks — BLOCK/UNDERLINE/BAR
+    // stay solid. Typing resets to visible and holds solid briefly (industry
+    // standard — a blinking cursor while actively typing reads as broken).
     var cursorVisible by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(cursorStyle, typedLineShadow) {
+        if (cursorStyle != CursorStyle.BLINKING_BLOCK) {
+            cursorVisible = true
+            return@LaunchedEffect
+        }
+        cursorVisible = true
+        delay(600) // pause blinking briefly after activity
         while (true) {
             delay(530)
             cursorVisible = !cursorVisible
@@ -180,24 +212,15 @@ fun TerminalScreen(
             cursorStyle = cursorStyle,
             cursorVisible = cursorVisible,
             searchQuery = searchQuery,
-            inputText = inputText,
-            onInputTextChange = { newText ->
-                inputText = newText
-                if (historyIndex != -1 && (history.isEmpty() || newText != history.getOrNull(historyIndex)?.command)) {
-                    historyIndex = -1
-                }
-            },
-            onSendCommand = {
-                historyIndex = -1
-                uncommittedInput = ""
-                viewModel.sendCommand(it)
-            },
             inputFocusRequester = inputFocusRequester,
             onLaunchDemo = { viewModel.openDemoSession() },
             onLaunchLocal = { viewModel.openLocalSession() },
             onLaunchOci = { ociLauncher() },
-            onHistoryUp = onHistoryUp,
-            onHistoryDown = onHistoryDown,
+            onRawInsert = sendRaw,
+            onBackspace = sendBackspace,
+            onEnter = sendEnter,
+            onArrowUp = sendArrowUp,
+            onArrowDown = sendArrowDown,
             modifier = Modifier.weight(1f)
         )
 
@@ -213,32 +236,11 @@ fun TerminalScreen(
                 onToggleAlt = { viewModel.toggleAlt() },
                 onSendSpecialKey = { specialKey ->
                     if (specialKey == TerminalKey.CTRL_C) {
-                        inputText = ""
-                        historyIndex = -1
-                        uncommittedInput = ""
+                        typedLineShadow = ""
                     }
                     viewModel.sendSpecialKey(specialKey)
                 },
-                onSendRawInput = { rawText ->
-                    inputText += rawText
-                },
-                onSendCommand = {
-                    historyIndex = -1
-                    uncommittedInput = ""
-                    viewModel.sendCommand(it)
-                },
-                onSendEnter = {
-                    historyIndex = -1
-                    uncommittedInput = ""
-                    if (inputText.isNotBlank()) {
-                        viewModel.sendCommand(inputText)
-                        inputText = ""
-                    } else {
-                        viewModel.sendRawInput("\n")
-                    }
-                },
-                onHistoryUp = onHistoryUp,
-                onHistoryDown = onHistoryDown
+                onSendRawInput = sendRaw
             )
         }
 

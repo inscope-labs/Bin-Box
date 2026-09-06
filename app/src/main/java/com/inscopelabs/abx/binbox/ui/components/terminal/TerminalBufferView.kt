@@ -9,9 +9,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
@@ -23,55 +20,26 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.inscopelabs.abx.binbox.core.logging.BinBoxLogger
 import com.inscopelabs.abx.binbox.oci.wizard.OciFreeTierPromoCard
 import com.inscopelabs.abx.binbox.terminal.engine.ShellSession
 import com.inscopelabs.abx.binbox.terminal.model.CursorStyle
 import com.inscopelabs.abx.binbox.terminal.model.TerminalLine
 import com.inscopelabs.abx.binbox.terminal.model.TerminalThemePreset
 import com.inscopelabs.abx.binbox.ui.theme.*
-
-fun normalizePrompt(annotated: AnnotatedString): AnnotatedString {
-    val text = annotated.text
-    val trimmed = text.trimEnd()
-    if (trimmed.isEmpty()) return annotated
-    val targetText = "$trimmed "
-    if (text == targetText) return annotated
-
-    val builder = AnnotatedString.Builder()
-    builder.append(trimmed)
-    builder.append(" ")
-    for (span in annotated.spanStyles) {
-        val start = span.start.coerceAtMost(trimmed.length)
-        val end = span.end.coerceAtMost(trimmed.length)
-        if (start < end) {
-            builder.addStyle(span.item, start, end)
-        }
-    }
-    return builder.toAnnotatedString()
-}
 
 @Composable
 fun TerminalBufferView(
@@ -83,21 +51,17 @@ fun TerminalBufferView(
     cursorStyle: CursorStyle,
     cursorVisible: Boolean,
     searchQuery: String,
-    inputText: String,
-    onInputTextChange: (String) -> Unit,
-    onSendCommand: (String) -> Unit,
     inputFocusRequester: FocusRequester,
     onLaunchDemo: () -> Unit,
     onLaunchLocal: () -> Unit,
     onLaunchOci: () -> Unit,
-    onHistoryUp: (() -> Unit)? = null,
-    onHistoryDown: (() -> Unit)? = null,
+    onRawInsert: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onEnter: () -> Unit,
+    onArrowUp: () -> Unit,
+    onArrowDown: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var lastKnownPrompt by remember(activeSession?.id) {
-        mutableStateOf<AnnotatedString?>(null)
-    }
-
     // Square-cornered terminal background container per industry terminal specifications
     Box(
         modifier = modifier
@@ -185,36 +149,22 @@ fun TerminalBufferView(
                 )
             }
         } else {
-            // Check whether the terminal session has an active pending prompt line
-            val hasPending = activeSession.hasPendingLine
-            val lastLineIsPrompt = sessionLines.isNotEmpty() && sessionLines.last().rawText.let { text ->
-                val trimmed = text.trimEnd()
-                trimmed.endsWith("$") || trimmed.endsWith("#") || trimmed.endsWith(">") || trimmed.endsWith("%")
-            }
-            val hasPromptLine = hasPending || lastLineIsPrompt
-
-            if (hasPromptLine && sessionLines.isNotEmpty()) {
-                lastKnownPrompt = normalizePrompt(
-                    renderLineAnnotatedString(sessionLines.last(), currentTheme, searchQuery)
-                )
-            }
-
-            val completedLines = if (hasPromptLine && sessionLines.isNotEmpty()) {
+            // The last line is either mid-write (hasPendingLine) or the shell's
+            // freshly-reprinted prompt — either way it's the one line that's still
+            // "live" and gets the cursor + keystroke capture attached to it. Its
+            // text is the real PTY echo, already including anything typed so far,
+            // so there is no separate client-side prompt/input value to reconcile.
+            val hasActiveLine = activeSession.hasPendingLine || sessionLines.isNotEmpty()
+            val completedLines = if (hasActiveLine && sessionLines.isNotEmpty()) {
                 sessionLines.dropLast(1)
             } else {
                 sessionLines
             }
-
-            val promptAnnotatedString: AnnotatedString = lastKnownPrompt ?: normalizePrompt(
-                buildAnnotatedString {
-                    val promptPrefix = if (activeSession.hostLabel.isNotBlank()) {
-                        "${activeSession.hostLabel}$ "
-                    } else {
-                        "$ "
-                    }
-                    append(promptPrefix)
-                }
-            )
+            val activeLineAnnotated: AnnotatedString = if (sessionLines.isNotEmpty()) {
+                renderLineAnnotatedString(sessionLines.last(), currentTheme, searchQuery)
+            } else {
+                AnnotatedString("")
+            }
 
             SelectionContainer {
                 LazyColumn(
@@ -240,20 +190,22 @@ fun TerminalBufferView(
                         )
                     }
 
-                    // Active shell prompt with directly integrated command input and visible cursor
+                    // Active/live line: real shell echo (prompt + anything typed so
+                    // far) plus an inline cursor and the invisible keystroke capture
+                    // field. Nothing here is client-composed text.
                     item {
                         TerminalPromptRow(
-                            prompt = promptAnnotatedString,
-                            inputText = inputText,
-                            onInputTextChange = onInputTextChange,
-                            onSendCommand = onSendCommand,
+                            activeLine = activeLineAnnotated,
                             inputFocusRequester = inputFocusRequester,
                             fontSizeSp = fontSizeSp,
                             currentTheme = currentTheme,
                             cursorStyle = cursorStyle,
                             cursorVisible = cursorVisible,
-                            onHistoryUp = onHistoryUp,
-                            onHistoryDown = onHistoryDown
+                            onRawInsert = onRawInsert,
+                            onBackspace = onBackspace,
+                            onEnter = onEnter,
+                            onArrowUp = onArrowUp,
+                            onArrowDown = onArrowDown
                         )
                     }
                 }
@@ -264,30 +216,21 @@ fun TerminalBufferView(
 
 @Composable
 fun TerminalPromptRow(
-    prompt: AnnotatedString,
-    inputText: String,
-    onInputTextChange: (String) -> Unit,
-    onSendCommand: (String) -> Unit,
+    activeLine: AnnotatedString,
     inputFocusRequester: FocusRequester,
     fontSizeSp: Int,
     currentTheme: TerminalThemePreset,
     cursorStyle: CursorStyle,
     cursorVisible: Boolean,
-    onHistoryUp: (() -> Unit)? = null,
-    onHistoryDown: (() -> Unit)? = null,
+    onRawInsert: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onEnter: () -> Unit,
+    onArrowUp: () -> Unit,
+    onArrowDown: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val dispatchEnter = {
-        if (inputText.isNotBlank()) {
-            BinBoxLogger.d("TerminalBufferView", "Prompt command dispatched: $inputText")
-            onSendCommand(inputText)
-            onInputTextChange("")
-        } else {
-            BinBoxLogger.d("TerminalBufferView", "Blank enter dispatched to shell")
-            onSendCommand("")
-        }
-    }
-
+    // Word-wrapping (not single-line/horizontal-scroll) so long lines behave
+    // like every other terminal instead of shifting sideways off-screen.
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -297,111 +240,70 @@ fun TerminalPromptRow(
             ) {
                 inputFocusRequester.requestFocus()
             },
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.Top
     ) {
-        // Native Shell Prompt with full ANSI color/segment preservation
+        // The real shell echo (prompt + anything typed, already merged by the
+        // PTY) rendered with full ANSI styling. This is the only source of
+        // truth for what's on screen — there is no separate input value.
         Text(
-            text = prompt,
+            text = activeLine,
             fontSize = fontSizeSp.sp,
             fontFamily = FontFamily.Monospace,
             lineHeight = (fontSizeSp + 5).sp,
-            color = currentTheme.foregroundColor
+            color = currentTheme.foregroundColor,
+            softWrap = true,
+            modifier = Modifier.weight(1f)
         )
 
-        // Integrated prompt command input
-        BasicTextField(
-            value = inputText,
-            onValueChange = onInputTextChange,
-            modifier = Modifier
-                .weight(1f)
-                .focusRequester(inputFocusRequester)
-                .onPreviewKeyEvent { keyEvent ->
-                    if (keyEvent.type == KeyEventType.KeyDown) {
-                        when (keyEvent.key) {
-                            Key.Enter, Key.NumPadEnter -> {
-                                dispatchEnter()
-                                true
-                            }
-                            Key.DirectionUp -> {
-                                if (onHistoryUp != null) {
-                                    onHistoryUp()
-                                    true
-                                } else {
-                                    false
-                                }
-                            }
-                            Key.DirectionDown -> {
-                                if (onHistoryDown != null) {
-                                    onHistoryDown()
-                                    true
-                                } else {
-                                    false
-                                }
-                            }
-                            else -> false
-                        }
-                    } else {
-                        false
-                    }
+        // Cursor is drawn at the true end of the real echoed line — no longer
+        // a position independently guessed by a separate input field. (Precise
+        // mid-line placement after cursor-left navigation needs the full 2D
+        // screen-grid model tracked separately; this anchors correctly for the
+        // overwhelmingly common case of typing forward.)
+        if (cursorVisible) {
+            when (cursorStyle) {
+                CursorStyle.BLOCK, CursorStyle.BLINKING_BLOCK -> {
+                    Box(
+                        modifier = Modifier
+                            .size(
+                                width = (fontSizeSp * 0.58).dp,
+                                height = (fontSizeSp * 1.15).dp
+                            )
+                            .background(ImmersivePrimary)
+                            .testTag("terminal_cursor_block")
+                    )
                 }
-                .testTag("terminal_prompt_input"),
-            textStyle = TextStyle(
-                fontFamily = FontFamily.Monospace,
-                fontSize = fontSizeSp.sp,
-                color = currentTheme.foregroundColor,
-                lineHeight = (fontSizeSp + 5).sp
-            ),
-            cursorBrush = SolidColor(
-                if (cursorVisible && cursorStyle == CursorStyle.BAR) ImmersivePrimary else Color.Transparent
-            ),
-            keyboardOptions = KeyboardOptions(
-                imeAction = ImeAction.Send,
-                autoCorrect = false
-            ),
-            keyboardActions = KeyboardActions(
-                onSend = { dispatchEnter() },
-                onDone = { dispatchEnter() },
-                onGo = { dispatchEnter() },
-                onNext = { dispatchEnter() }
-            ),
-            singleLine = true,
-            decorationBox = { innerTextField ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    innerTextField()
-
-                    if (cursorVisible && cursorStyle != CursorStyle.BAR) {
-                        when (cursorStyle) {
-                            CursorStyle.BLOCK, CursorStyle.BLINKING_BLOCK -> {
-                                Box(
-                                    modifier = Modifier
-                                        .size(
-                                            width = (fontSizeSp * 0.58).dp,
-                                            height = (fontSizeSp * 1.15).dp
-                                        )
-                                        .background(ImmersivePrimary)
-                                        .testTag("terminal_cursor_block")
-                                )
-                            }
-                            CursorStyle.UNDERLINE -> {
-                                Box(
-                                    modifier = Modifier
-                                        .size(
-                                            width = (fontSizeSp * 0.58).dp,
-                                            height = 2.5.dp
-                                        )
-                                        .background(ImmersivePrimary)
-                                        .align(Alignment.Bottom)
-                                        .testTag("terminal_cursor_underline")
-                                )
-                            }
-                            CursorStyle.BAR -> { /* Handled via cursorBrush */ }
-                        }
-                    }
+                CursorStyle.UNDERLINE -> {
+                    Box(
+                        modifier = Modifier
+                            .size(
+                                width = (fontSizeSp * 0.58).dp,
+                                height = 2.5.dp
+                            )
+                            .background(ImmersivePrimary)
+                            .testTag("terminal_cursor_underline")
+                    )
+                }
+                CursorStyle.BAR -> {
+                    Box(
+                        modifier = Modifier
+                            .size(width = 2.dp, height = (fontSizeSp * 1.15).dp)
+                            .background(ImmersivePrimary)
+                            .testTag("terminal_cursor_bar")
+                    )
                 }
             }
+        }
+
+        // Invisible keystroke capture surface — see RawInputCaptureField for
+        // why this never displays or accumulates text itself.
+        RawInputCaptureField(
+            focusRequester = inputFocusRequester,
+            onInsert = onRawInsert,
+            onBackspace = onBackspace,
+            onEnter = onEnter,
+            onArrowUp = onArrowUp,
+            onArrowDown = onArrowDown
         )
     }
 }

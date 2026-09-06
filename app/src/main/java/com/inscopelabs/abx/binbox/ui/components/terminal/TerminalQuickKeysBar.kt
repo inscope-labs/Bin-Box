@@ -27,10 +27,6 @@ fun TerminalQuickKeysBar(
     onToggleAlt: () -> Unit,
     onSendSpecialKey: (TerminalKey) -> Unit,
     onSendRawInput: (String) -> Unit,
-    onSendCommand: (String) -> Unit,
-    onSendEnter: (() -> Unit)? = null,
-    onHistoryUp: (() -> Unit)? = null,
-    onHistoryDown: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -52,13 +48,7 @@ fun TerminalQuickKeysBar(
         )
         AccessoryKeyButton(
             label = "ENTER",
-            onClick = {
-                if (onSendEnter != null) {
-                    onSendEnter()
-                } else {
-                    onSendRawInput("\n")
-                }
-            },
+            onClick = { onSendRawInput("\r") },
             accentColor = ImmersivePrimary
         )
         AccessoryKeyButton(
@@ -79,7 +69,7 @@ fun TerminalQuickKeysBar(
             shape = RoundedCornerShape(12.dp),
             color = ImmersivePrimary,
             modifier = Modifier
-                .clickable { onSendCommand("journalctl -n 30 --no-pager || dmesg | tail -n 30") }
+                .clickable { onSendRawInput("journalctl -n 30 --no-pager || dmesg | tail -n 30\r") }
                 .height(34.dp)
         ) {
             Row(
@@ -111,26 +101,16 @@ fun TerminalQuickKeysBar(
         ComboKeyPill(label = "^A", sub = "HOME", onClick = { onSendSpecialKey(TerminalKey.CTRL_A) })
         ComboKeyPill(label = "^E", sub = "END", onClick = { onSendSpecialKey(TerminalKey.CTRL_E) })
 
-        // Directional Arrows
+        // Directional Arrows — forwarded as real terminal byte sequences so the
+        // shell's own readline handles history/line-editing, same as any other
+        // terminal. No client-side history state to branch on here.
         AccessoryKeyButton(
             label = "▲",
-            onClick = {
-                if (onHistoryUp != null) {
-                    onHistoryUp()
-                } else {
-                    onSendSpecialKey(TerminalKey.ARROW_UP)
-                }
-            }
+            onClick = { onSendSpecialKey(TerminalKey.ARROW_UP) }
         )
         AccessoryKeyButton(
             label = "▼",
-            onClick = {
-                if (onHistoryDown != null) {
-                    onHistoryDown()
-                } else {
-                    onSendSpecialKey(TerminalKey.ARROW_DOWN)
-                }
-            }
+            onClick = { onSendSpecialKey(TerminalKey.ARROW_DOWN) }
         )
         AccessoryKeyButton(label = "◀", onClick = { onSendSpecialKey(TerminalKey.ARROW_LEFT) })
         AccessoryKeyButton(label = "▶", onClick = { onSendSpecialKey(TerminalKey.ARROW_RIGHT) })
